@@ -16,7 +16,7 @@ from PySide6.QtGui import QGuiApplication, QIcon
 from PySide6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget
 from PySide6.QtWebEngineWidgets import QWebEngineView
 
-ROOT = Path("/home/matheus/projects/envsync")
+ROOT = Path(__file__).resolve().parents[2]
 URL = os.environ.get("ENVSYNC_URL", "http://127.0.0.1:45770")
 ICON_CANDIDATES = [
     Path.home() / ".local/share/icons/envsync.png",
