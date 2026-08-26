@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""EnvSync desktop shell — PySide6 + QtWebEngine (mesmo padrão do Hermes)."""
+"""EnvSync desktop shell — PySide6 + QtWebEngine + system tray."""
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
@@ -11,9 +12,17 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-from PySide6.QtCore import QSettings, QUrl
-from PySide6.QtGui import QGuiApplication, QIcon
-from PySide6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget
+from PySide6.QtCore import QSettings, QTimer, QUrl
+from PySide6.QtGui import QAction, QGuiApplication, QIcon
+from PySide6.QtWidgets import (
+    QApplication,
+    QMainWindow,
+    QMenu,
+    QMessageBox,
+    QSystemTrayIcon,
+    QVBoxLayout,
+    QWidget,
+)
 from PySide6.QtWebEngineWidgets import QWebEngineView
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -62,6 +71,26 @@ def health_ok() -> bool:
         return False
 
 
+def rpc(method: str, params: dict | None = None) -> dict:
+    payload = {
+        "jsonrpc": "2.0",
+        "id": int(time.time() * 1000),
+        "method": method,
+        "params": params or {},
+    }
+    request = urllib.request.Request(
+        f"{URL}/rpc",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(request, timeout=3) as response:
+        body = json.loads(response.read().decode("utf-8"))
+    if body.get("error"):
+        raise RuntimeError(body["error"].get("message", "RPC error"))
+    return body.get("result") or {}
+
+
 def start_backend() -> None:
     if health_ok():
         return
@@ -87,9 +116,30 @@ def start_backend() -> None:
     )
 
 
+def stop_backend() -> None:
+    # Prefer graceful RPC; also stop systemd user unit if present.
+    try:
+        if health_ok():
+            rpc("daemon.shutdown")
+    except Exception:
+        pass
+
+    subprocess.run(
+        ["systemctl", "--user", "stop", "envsyncd.service"],
+        check=False,
+        capture_output=True,
+    )
+
+    for _ in range(20):
+        if not health_ok():
+            return
+        time.sleep(0.15)
+
+
 class EnvSyncWindow(QMainWindow):
-    def __init__(self, url: str, icon: QIcon) -> None:
+    def __init__(self, url: str, icon: QIcon, on_close_to_tray) -> None:
         super().__init__()
+        self._on_close_to_tray = on_close_to_tray
         self.setWindowTitle("EnvSync")
         self.setWindowIcon(icon)
 
@@ -118,11 +168,108 @@ class EnvSyncWindow(QMainWindow):
     def closeEvent(self, event) -> None:  # noqa: N802
         self.settings.setValue("geometry", self.saveGeometry())
         self.settings.setValue("windowState", self.saveState())
-        super().closeEvent(event)
+        event.ignore()
+        self.hide()
+        self._on_close_to_tray()
+
+
+class EnvSyncApp:
+    def __init__(self) -> None:
+        self.icon = resolve_icon()
+        self.app = QApplication(sys.argv)
+        self.app.setApplicationName("envsync")
+        self.app.setApplicationDisplayName("EnvSync")
+        self.app.setDesktopFileName("envsync")
+        self.app.setWindowIcon(self.icon)
+        self.app.setQuitOnLastWindowClosed(False)
+
+        self.window = EnvSyncWindow(URL, self.icon, self._notify_hidden)
+        self.tray = self._build_tray()
+        self._daemon_alive = health_ok()
+
+        self.poll = QTimer()
+        self.poll.setInterval(4000)
+        self.poll.timeout.connect(self._refresh_tray_status)
+        self.poll.start()
+
+    def _build_tray(self) -> QSystemTrayIcon:
+        if not QSystemTrayIcon.isSystemTrayAvailable():
+            QMessageBox.warning(
+                None,
+                "EnvSync",
+                "Bandeja do sistema indisponível. A janela continuará aberta.",
+            )
+
+        tray = QSystemTrayIcon(self.icon, self.app)
+        tray.setToolTip("EnvSync — daemon ativo")
+
+        menu = QMenu()
+        open_action = QAction("Abrir EnvSync", menu)
+        open_action.triggered.connect(self.show_window)
+        menu.addAction(open_action)
+
+        status_action = QAction("Daemon: verificando…", menu)
+        status_action.setEnabled(False)
+        menu.addAction(status_action)
+        self._status_action = status_action
+
+        menu.addSeparator()
+        quit_action = QAction("Encerrar EnvSync (UI + daemon)", menu)
+        quit_action.triggered.connect(self.quit_all)
+        menu.addAction(quit_action)
+
+        tray.setContextMenu(menu)
+        tray.activated.connect(self._on_tray_activated)
+        tray.show()
+        self._refresh_tray_status()
+        return tray
+
+    def _notify_hidden(self) -> None:
+        if self.tray.supportsMessages():
+            self.tray.showMessage(
+                "EnvSync",
+                "Continua na bandeja enquanto o daemon estiver ativo.",
+                QSystemTrayIcon.MessageIcon.Information,
+                2500,
+            )
+
+    def _on_tray_activated(self, reason: QSystemTrayIcon.ActivationReason) -> None:
+        if reason in (
+            QSystemTrayIcon.ActivationReason.Trigger,
+            QSystemTrayIcon.ActivationReason.DoubleClick,
+        ):
+            self.show_window()
+
+    def show_window(self) -> None:
+        self.window.show()
+        self.window.raise_()
+        self.window.activateWindow()
+
+    def _refresh_tray_status(self) -> None:
+        alive = health_ok()
+        self._daemon_alive = alive
+        if alive:
+            self._status_action.setText("Daemon: online")
+            self.tray.setToolTip("EnvSync — daemon online")
+            self.tray.setIcon(self.icon)
+            if not self.tray.isVisible():
+                self.tray.show()
+        else:
+            self._status_action.setText("Daemon: offline")
+            self.tray.setToolTip("EnvSync — daemon offline")
+
+    def quit_all(self) -> None:
+        self.poll.stop()
+        stop_backend()
+        self.tray.hide()
+        self.app.quit()
+
+    def run(self) -> int:
+        self.show_window()
+        return self.app.exec()
 
 
 def main() -> int:
-    # Ajuda o Plasma a casar com envsync.desktop / StartupWMClass=envsync
     sys.argv[0] = "envsync"
     start_backend()
 
@@ -130,17 +277,7 @@ def main() -> int:
     QGuiApplication.setApplicationDisplayName("EnvSync")
     QGuiApplication.setDesktopFileName("envsync")
 
-    app = QApplication(sys.argv)
-    app.setApplicationName("envsync")
-    app.setApplicationDisplayName("EnvSync")
-    app.setDesktopFileName("envsync")
-
-    icon = resolve_icon()
-    app.setWindowIcon(icon)
-
-    window = EnvSyncWindow(URL, icon)
-    window.show()
-    return app.exec()
+    return EnvSyncApp().run()
 
 
 if __name__ == "__main__":

@@ -22,6 +22,13 @@ export function createHandlers(
           fingerprint: identity.fingerprint,
           deviceName: store.getDeviceName(),
         };
+      case "daemon.shutdown": {
+        store.addActivity("shutdown", "Encerramento solicitado pela UI/tray");
+        setTimeout(() => {
+          process.exit(0);
+        }, 150);
+        return { ok: true, shuttingDown: true };
+      }
       case "catalog.list":
         return store.getCatalog();
       case "selection.get":

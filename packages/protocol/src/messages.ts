@@ -3,6 +3,7 @@ export const IPC_SOCKET_NAME = "envsyncd.sock";
 
 export type IpcMethod =
   | "daemon.ping"
+  | "daemon.shutdown"
   | "catalog.list"
   | "selection.get"
   | "selection.set"
