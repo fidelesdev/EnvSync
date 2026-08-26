@@ -1,0 +1,17 @@
+{
+  "name": "envsync",
+  "private": true,
+  "packageManager": "pnpm@9.15.0",
+  "scripts": {
+    "build": "pnpm -r run build",
+    "test": "pnpm -r run test",
+    "typecheck": "pnpm -r run typecheck",
+    "daemon": "pnpm --filter @envsync/daemon dev",
+    "ui": "pnpm --filter @envsync/ui dev"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.2",
+    "vitest": "^3.0.8",
+    "@types/node": "^22.13.10"
+  }
+}

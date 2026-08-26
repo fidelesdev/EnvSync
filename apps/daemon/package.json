@@ -1,0 +1,24 @@
+{
+  "name": "@envsync/daemon",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/main.js",
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "dev": "tsx src/main.ts"
+  },
+  "dependencies": {
+    "@envsync/catalog": "workspace:*",
+    "@envsync/core": "workspace:*",
+    "@envsync/plugins": "workspace:*",
+    "@envsync/protocol": "workspace:*",
+    "bonjour-service": "^1.2.1",
+    "selfsigned": "^2.4.1"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.3"
+  }
+}
