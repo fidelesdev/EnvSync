@@ -18,7 +18,6 @@ from PySide6.QtWidgets import (
     QApplication,
     QMainWindow,
     QMenu,
-    QMessageBox,
     QSystemTrayIcon,
     QVBoxLayout,
     QWidget,
@@ -140,6 +139,7 @@ class EnvSyncWindow(QMainWindow):
     def __init__(self, url: str, icon: QIcon, on_close_to_tray) -> None:
         super().__init__()
         self._on_close_to_tray = on_close_to_tray
+        self._force_quit = False
         self.setWindowTitle("EnvSync")
         self.setWindowIcon(icon)
 
@@ -168,6 +168,9 @@ class EnvSyncWindow(QMainWindow):
     def closeEvent(self, event) -> None:  # noqa: N802
         self.settings.setValue("geometry", self.saveGeometry())
         self.settings.setValue("windowState", self.saveState())
+        if self._force_quit:
+            event.accept()
+            return
         event.ignore()
         self.hide()
         self._on_close_to_tray()
@@ -175,14 +178,17 @@ class EnvSyncWindow(QMainWindow):
 
 class EnvSyncApp:
     def __init__(self) -> None:
-        self.icon = resolve_icon()
         self.app = QApplication(sys.argv)
         self.app.setApplicationName("envsync")
         self.app.setApplicationDisplayName("EnvSync")
         self.app.setDesktopFileName("envsync")
-        self.app.setWindowIcon(self.icon)
         self.app.setQuitOnLastWindowClosed(False)
 
+        self.icon = resolve_icon()
+        self.app.setWindowIcon(self.icon)
+
+        self._status_action: QAction | None = None
+        self.tray: QSystemTrayIcon | None = None
         self.window = EnvSyncWindow(URL, self.icon, self._notify_hidden)
         self.tray = self._build_tray()
         self._daemon_alive = health_ok()
@@ -192,13 +198,11 @@ class EnvSyncApp:
         self.poll.timeout.connect(self._refresh_tray_status)
         self.poll.start()
 
-    def _build_tray(self) -> QSystemTrayIcon:
+    def _build_tray(self) -> QSystemTrayIcon | None:
         if not QSystemTrayIcon.isSystemTrayAvailable():
-            QMessageBox.warning(
-                None,
-                "EnvSync",
-                "Bandeja do sistema indisponível. A janela continuará aberta.",
-            )
+            # Sem bandeja: fechar a janela encerra o app (comportamento clássico).
+            self.app.setQuitOnLastWindowClosed(True)
+            return None
 
         tray = QSystemTrayIcon(self.icon, self.app)
         tray.setToolTip("EnvSync — daemon ativo")
@@ -225,6 +229,9 @@ class EnvSyncApp:
         return tray
 
     def _notify_hidden(self) -> None:
+        if self.tray is None:
+            self.quit_all()
+            return
         if self.tray.supportsMessages():
             self.tray.showMessage(
                 "EnvSync",
@@ -246,6 +253,8 @@ class EnvSyncApp:
         self.window.activateWindow()
 
     def _refresh_tray_status(self) -> None:
+        if self.tray is None:
+            return
         alive = health_ok()
         self._daemon_alive = alive
         if alive:
@@ -261,7 +270,10 @@ class EnvSyncApp:
     def quit_all(self) -> None:
         self.poll.stop()
         stop_backend()
-        self.tray.hide()
+        if self.tray is not None:
+            self.tray.hide()
+        self.window._force_quit = True
+        self.window.close()
         self.app.quit()
 
     def run(self) -> int:
