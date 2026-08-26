@@ -1,20 +1,34 @@
-export type EnvsyncApi = {
-  invoke: (method: string, params?: Record<string, unknown>) => Promise<unknown>;
-  platform: string;
-};
-
-declare global {
-  interface Window {
-    envsync: EnvsyncApi;
-  }
-}
+const RPC_URL =
+  import.meta.env.VITE_ENVSYNC_RPC_URL ??
+  `${window.location.origin}/rpc`;
 
 export async function ipc<T>(
   method: string,
   params: Record<string, unknown> = {},
 ): Promise<T> {
-  if (!window.envsync) {
-    throw new Error("Bridge EnvSync indisponível (abra via Electron)");
+  const response = await fetch(RPC_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: Date.now(),
+      method,
+      params,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`RPC HTTP ${response.status}`);
   }
-  return window.envsync.invoke(method, params) as Promise<T>;
+
+  const payload = (await response.json()) as {
+    result?: T;
+    error?: { message?: string };
+  };
+
+  if (payload.error) {
+    throw new Error(payload.error.message ?? "Erro RPC");
+  }
+
+  return payload.result as T;
 }

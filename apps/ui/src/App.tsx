@@ -28,6 +28,14 @@ export type SyncPlanView = {
   }>;
 };
 
+const TAB_META: Array<{ id: Tab; label: string }> = [
+  { id: "devices", label: "Dispositivos" },
+  { id: "catalog", label: "Catálogo" },
+  { id: "plan", label: "Plano" },
+  { id: "conflicts", label: "Conflitos" },
+  { id: "activity", label: "Atividade" },
+];
+
 export function App() {
   const [tab, setTab] = useState<Tab>("devices");
   const [ping, setPing] = useState<Ping | null>(null);
@@ -59,43 +67,54 @@ export function App() {
     };
   }, []);
 
-  const tabs = useMemo(
-    () =>
-      [
-        ["devices", "Dispositivos"],
-        ["catalog", "Catálogo"],
-        ["plan", "Plano"],
-        ["conflicts", "Conflitos"],
-        ["activity", "Atividade"],
-      ] as const,
-    [],
-  );
+  const deviceLabel = useMemo(() => {
+    if (!ping) return "aguardando daemon";
+    return `${ping.deviceName} · ${ping.fingerprint.slice(0, 10)}…`;
+  }, [ping]);
 
   return (
     <div className="app-shell">
-      <nav>
-        <h1>EnvSync</h1>
-        <p className="muted" style={{ fontSize: "0.85rem" }}>
-          {ping
-            ? `${ping.deviceName} · ${ping.fingerprint.slice(0, 10)}…`
-            : "Daemon offline"}
-        </p>
-        {tabs.map(([id, label]) => (
-          <button
-            key={id}
-            type="button"
-            data-active={tab === id}
-            onClick={() => setTab(id)}
-          >
-            {label}
-          </button>
-        ))}
-      </nav>
-      <main>
+      <aside className="sidebar">
+        <div className="brand">
+          <div className="brand-mark">
+            <span className="brand-orb" aria-hidden />
+            <h1>EnvSync</h1>
+          </div>
+          <p className="brand-sub">sync seletiva entre máquinas na LAN</p>
+          <div className="status-pill" data-online={Boolean(ping)}>
+            <span className="status-dot" aria-hidden />
+            <span>{ping ? "daemon online" : "daemon offline"}</span>
+          </div>
+          <p className="brand-sub" style={{ marginTop: "0.55rem" }}>
+            {deviceLabel}
+          </p>
+        </div>
+
+        <div className="nav-list">
+          {TAB_META.map((entry) => (
+            <button
+              key={entry.id}
+              type="button"
+              data-active={tab === entry.id}
+              onClick={() => setTab(entry.id)}
+            >
+              <span className="nav-icon" aria-hidden data-tab={entry.id} />
+              <span>{entry.label}</span>
+            </button>
+          ))}
+        </div>
+
+        <div className="sidebar-foot">
+          Nada é aplicado sem confirmação explícita do plano.
+        </div>
+      </aside>
+
+      <main className="content" key={tab}>
         {error ? (
           <p className="error">
-            Não foi possível falar com o daemon. Rode <code>pnpm daemon</code>.{" "}
-            ({error})
+            Não foi possível falar com o daemon. Rode <code>pnpm daemon</code>.
+            <br />
+            <span className="mono">{error}</span>
           </p>
         ) : null}
         {tab === "devices" ? (

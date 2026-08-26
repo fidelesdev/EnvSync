@@ -57,12 +57,12 @@ export function PlanPage({
 
   return (
     <div className="stack">
-      <div>
+      <header className="page-head">
         <h2>Plano de sincronização</h2>
-        <p className="muted">
+        <p>
           Nenhuma alteração é aplicada sem o botão <strong>Confirmar</strong>.
         </p>
-      </div>
+      </header>
       <div className="row">
         <button type="button" onClick={() => void build()} disabled={busy}>
           Montar plano
@@ -84,12 +84,23 @@ export function PlanPage({
           </p>
           {plan.actions.map((action) => (
             <div className="item" key={action.itemId + action.kind}>
-              <span className="badge">{action.kind}</span>
+              <span
+                className="badge"
+                data-tone={
+                  action.kind === "conflict"
+                    ? "warn"
+                    : action.kind === "skip"
+                      ? undefined
+                      : "accent"
+                }
+              >
+                {action.kind}
+              </span>
               <div>
                 <strong>{action.itemId}</strong>
                 <div className="muted">{action.summary}</div>
               </div>
-              <span className="muted">{action.direction}</span>
+              <span className="muted mono">{action.direction}</span>
             </div>
           ))}
         </div>

@@ -3,6 +3,7 @@ import { dataDir, socketPath } from "@envsync/core";
 import { PRODUCT_NAME } from "@envsync/protocol";
 import { DiscoveryService } from "./discovery.js";
 import { createHandlers } from "./handlers.js";
+import { HttpApiServer } from "./http-api.js";
 import { loadOrCreateIdentity } from "./identity.js";
 import { IpcServer } from "./ipc-server.js";
 import { TlsPeerServer, TlsPeerTransport } from "./peer-server.js";
@@ -20,6 +21,9 @@ async function main(): Promise<void> {
   const ipc = new IpcServer(socketPath(), handlers);
   await ipc.start();
 
+  const http = new HttpApiServer({ handler: handlers });
+  const httpInfo = await http.start();
+
   const peerServer = new TlsPeerServer(identity, store);
   peerServer.start();
 
@@ -36,6 +40,8 @@ async function main(): Promise<void> {
       event: "started",
       product: PRODUCT_NAME,
       socket: socketPath(),
+      http: `http://${httpInfo.host}:${httpInfo.port}`,
+      uiDist: httpInfo.uiDist,
       fingerprint: identity.fingerprint,
       dataDir: root,
     }),

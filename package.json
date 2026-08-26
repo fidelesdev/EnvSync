@@ -7,7 +7,9 @@
     "test": "pnpm -r run test",
     "typecheck": "pnpm -r run typecheck",
     "daemon": "pnpm --filter @envsync/daemon dev",
-    "ui": "pnpm --filter @envsync/ui dev"
+    "ui": "pnpm --filter @envsync/ui build && echo 'UI em apps/ui/dist — abra via pnpm desktop'",
+    "desktop": "python3 apps/desktop/envsync-desktop-qt.py",
+    "ui:dev": "pnpm --filter @envsync/ui dev"
   },
   "devDependencies": {
     "typescript": "^5.8.2",

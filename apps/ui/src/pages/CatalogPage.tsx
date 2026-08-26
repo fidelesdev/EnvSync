@@ -58,12 +58,10 @@ export function CatalogPage() {
 
   return (
     <div className="stack">
-      <div>
+      <header className="page-head">
         <h2>Catálogo</h2>
-        <p className="muted">
-          Selecione grupos inteiros ou itens individuais para a próxima sync.
-        </p>
-      </div>
+        <p>Selecione grupos inteiros ou itens individuais para a próxima sync.</p>
+      </header>
       <div className="panel">
         {byGroup.map(({ group, items }) => {
           const allSelected =

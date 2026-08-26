@@ -35,13 +35,13 @@ export function DevicesPage({ selectedPeerId, onSelectPeer }: Props) {
 
   return (
     <div className="stack">
-      <div>
+      <header className="page-head">
         <h2>Dispositivos na LAN</h2>
-        <p className="muted">
-          Pareie pelo fingerprint antes de sincronizar. Só peers confiados entram
-          no plano.
+        <p>
+          Pareie pelo fingerprint antes de sincronizar. Só peers confiados
+          entram no plano.
         </p>
-      </div>
+      </header>
       <div className="panel stack">
         {peers.length === 0 ? (
           <p className="muted">Nenhum peer anunciado ainda (mDNS).</p>
@@ -57,17 +57,21 @@ export function DevicesPage({ selectedPeerId, onSelectPeer }: Props) {
               />
               <div>
                 <strong>{peer.name}</strong>
-                <div className="muted">
+                <div className="muted mono">
                   {peer.host}:{peer.port} · {peer.fingerprint.slice(0, 16)}…
                 </div>
               </div>
               <div className="row">
                 <span
-                  className={`badge ${peer.online ? "online" : "offline"}`}
+                  className="badge"
+                  data-tone={peer.online ? "ok" : undefined}
                 >
                   {peer.online ? "online" : "offline"}
                 </span>
-                <span className="badge">
+                <span
+                  className="badge"
+                  data-tone={peer.trusted ? "accent" : "warn"}
+                >
                   {peer.trusted ? "confiável" : "não pareado"}
                 </span>
                 {peer.trusted ? (

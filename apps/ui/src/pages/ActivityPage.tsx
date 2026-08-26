@@ -28,13 +28,13 @@ export function ActivityPage() {
 
   return (
     <div className="stack">
-      <div>
+      <header className="page-head">
         <h2>Atividade</h2>
-        <p className="muted">
+        <p>
           Histórico local. Backups ficam em{" "}
           <code>~/.local/share/envsync/backups/</code>.
         </p>
-      </div>
+      </header>
       <div className="panel">
         {entries.length === 0 ? (
           <p className="muted">Sem eventos ainda.</p>

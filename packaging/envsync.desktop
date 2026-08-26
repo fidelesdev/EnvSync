@@ -1,0 +1,13 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=EnvSync
+GenericName=Environment Sync
+Comment=Sincronização seletiva de ambiente entre dispositivos na LAN
+Exec=/home/matheus/projects/envsync/scripts/launch-envsync.sh
+Icon=envsync
+Terminal=false
+Categories=Utility;
+Keywords=sync;ambiente;biglinux;lan;config;
+StartupNotify=true
+StartupWMClass=envsync

@@ -19,19 +19,24 @@ pnpm --filter @envsync/plugins build
 pnpm --filter @envsync/daemon build
 ```
 
-## Rodar (dev)
-
-Terminal 1:
+## Rodar (desktop Qt — recomendado)
 
 ```bash
-pnpm daemon
+pnpm --filter @envsync/ui build   # se ainda não buildou a UI
+pnpm desktop                      # sobe daemon se precisar + janela PySide6
 ```
 
-Terminal 2:
+Ou pelo menu iniciar: **EnvSync**.
+
+## Rodar (dev separado)
 
 ```bash
-pnpm ui
+pnpm daemon   # terminal 1 — também serve UI em http://127.0.0.1:45770
+# abra a URL no browser, ou:
+pnpm desktop
 ```
+
+A UI web é React (Vite); o shell nativo é **PySide6 + QtWebEngine** (mesmo padrão do Hermes), não Electron.
 
 ## Serviço systemd (usuário)
 

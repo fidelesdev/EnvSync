@@ -32,13 +32,13 @@ export function ConflictsPage({ plan, onPlan }: Props) {
 
   return (
     <div className="stack">
-      <div>
+      <header className="page-head">
         <h2>Conflitos</h2>
-        <p className="muted">
+        <p>
           Confirme o plano antes. Depois escolha manter local, aceitar remoto ou
           pular.
         </p>
-      </div>
+      </header>
       {!plan ? (
         <div className="panel muted">Monte e confirme um plano primeiro.</div>
       ) : conflicts.length === 0 ? (
