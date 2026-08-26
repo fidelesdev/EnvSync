@@ -10,7 +10,8 @@ export type PeerTransport = {
     name: string,
   ): Promise<void>;
   pushPath(peer: PeerInfo, localPath: string, remoteLogical: string): Promise<void>;
-  pullPath(peer: PeerInfo, remoteLogical: string): Promise<string>;
+  /** Retorna caminho local temporário, ou null se o remoto não tiver o path. */
+  pullPath(peer: PeerInfo, remoteLogical: string): Promise<string | null>;
   pushEnv(
     peer: PeerInfo,
     keys: string[],
@@ -37,8 +38,9 @@ export class LoopbackPeerTransport implements PeerTransport {
 
   async pushPath(): Promise<void> {}
 
-  async pullPath(_peer: PeerInfo, remoteLogical: string): Promise<string> {
-    return remoteLogical.replace(/^~/, process.env.HOME ?? "");
+  async pullPath(_peer: PeerInfo, remoteLogical: string): Promise<string | null> {
+    const expanded = remoteLogical.replace(/^~/, process.env.HOME ?? "");
+    return expanded;
   }
 
   async pushEnv(): Promise<void> {}

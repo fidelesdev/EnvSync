@@ -3,15 +3,18 @@ import {
   connect as tlsConnect,
   type TLSSocket,
 } from "node:tls";
+import { execFileSync } from "node:child_process";
 import {
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
+  rmSync,
   statSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import type { PackageManager } from "@envsync/catalog";
 import { backupDir, expandHome, type ItemInventory } from "@envsync/core";
 import { envPlugin, filesPlugin, getPlugin } from "@envsync/plugins";
@@ -34,12 +37,88 @@ type PeerResponse = {
   error?: string;
 };
 
+type PathPayload = {
+  missing?: boolean;
+  kind?: "file" | "tar.gz";
+  contentBase64?: string;
+  entryName?: string;
+};
+
 function peerFingerprint(socket: TLSSocket): string {
   const cert = socket.getPeerCertificate();
   if (cert && typeof cert.fingerprint256 === "string") {
     return cert.fingerprint256.replace(/:/g, "").toLowerCase();
   }
   return "";
+}
+
+function packPath(absPath: string): PathPayload {
+  if (!existsSync(absPath)) return { missing: true };
+  const info = statSync(absPath);
+  if (info.isFile()) {
+    return {
+      kind: "file",
+      contentBase64: readFileSync(absPath).toString("base64"),
+      entryName: basename(absPath),
+    };
+  }
+  if (info.isDirectory()) {
+    const staging = mkdtempSync(join(tmpdir(), "envsync-tar-"));
+    const archive = join(staging, "payload.tar.gz");
+    execFileSync("tar", [
+      "-C",
+      dirname(absPath),
+      "-czf",
+      archive,
+      basename(absPath),
+    ]);
+    const contentBase64 = readFileSync(archive).toString("base64");
+    rmSync(staging, { recursive: true, force: true });
+    return {
+      kind: "tar.gz",
+      contentBase64,
+      entryName: basename(absPath),
+    };
+  }
+  return { missing: true };
+}
+
+function unpackPath(
+  target: string,
+  payload: PathPayload,
+  backupRoot: string,
+  dataDir: string,
+): void {
+  if (payload.missing || !payload.contentBase64 || !payload.kind) return;
+  const staging = mkdtempSync(join(tmpdir(), "envsync-unpack-"));
+  try {
+    if (payload.kind === "file") {
+      const tmp = join(staging, payload.entryName ?? "file");
+      writeFileSync(tmp, Buffer.from(payload.contentBase64, "base64"));
+      void filesPlugin.apply({
+        direction: "pull",
+        sourcePath: tmp,
+        targetPath: target,
+        ctx: { dataDir, backupRoot },
+        confirmed: true,
+      });
+      return;
+    }
+
+    const archive = join(staging, "payload.tar.gz");
+    writeFileSync(archive, Buffer.from(payload.contentBase64, "base64"));
+    const parent = dirname(target);
+    mkdirSync(parent, { recursive: true });
+    if (existsSync(target)) {
+      const backupTarget = join(backupRoot, `${basename(target)}-${Date.now()}`);
+      mkdirSync(backupRoot, { recursive: true });
+      execFileSync("cp", ["-a", target, backupTarget]);
+      rmSync(target, { recursive: true, force: true });
+    }
+    execFileSync("tar", ["-C", parent, "-xzf", archive]);
+  } finally {
+    rmSync(staging, { recursive: true, force: true });
+  }
 }
 
 export class TlsPeerServer {
@@ -133,24 +212,20 @@ export class TlsPeerServer {
       return { ok: true };
     }
     if (method === "path.read") {
-      const path = expandHome(params.logical as string);
-      if (!existsSync(path)) throw new Error("path missing");
-      if (statSync(path).isDirectory()) {
-        throw new Error("diretório não suportado no transporte MVP");
-      }
-      return { contentBase64: readFileSync(path).toString("base64") };
+      return packPath(expandHome(params.logical as string));
     }
     if (method === "path.put") {
       const target = expandHome(params.logical as string);
-      const tmp = join(mkdtempSync(join(tmpdir(), "envsync-put-")), "payload");
-      writeFileSync(tmp, Buffer.from(params.contentBase64 as string, "base64"));
-      await filesPlugin.apply({
-        direction: "pull",
-        sourcePath: tmp,
-        targetPath: target,
-        ctx: { dataDir: this.store.root, backupRoot: backupDir("remote-path") },
-        confirmed: true,
-      });
+      unpackPath(
+        target,
+        {
+          kind: (params.kind as PathPayload["kind"]) ?? "file",
+          contentBase64: params.contentBase64 as string,
+          entryName: params.entryName as string | undefined,
+        },
+        backupDir("remote-path"),
+        this.store.root,
+      );
       return { ok: true };
     }
     throw new Error(`Método peer desconhecido: ${method}`);
@@ -223,29 +298,38 @@ export class TlsPeerTransport implements PeerTransport {
     localPath: string,
     remoteLogical: string,
   ): Promise<void> {
-    if (!existsSync(localPath)) {
-      throw new Error(`Arquivo local ausente: ${localPath}`);
-    }
-    if (statSync(localPath).isDirectory()) {
-      throw new Error(
-        "Sync de diretórios via base64 não suportado no MVP; use arquivos únicos",
-      );
-    }
-    const contentBase64 = readFileSync(localPath).toString("base64");
+    const payload = packPath(localPath);
+    if (payload.missing) return;
     await this.request(peer, "path.put", {
       logical: remoteLogical,
-      contentBase64,
+      kind: payload.kind,
+      contentBase64: payload.contentBase64,
+      entryName: payload.entryName,
     });
   }
 
-  async pullPath(peer: PeerInfo, remoteLogical: string): Promise<string> {
-    const content = (await this.request(peer, "path.read", {
+  async pullPath(
+    peer: PeerInfo,
+    remoteLogical: string,
+  ): Promise<string | null> {
+    const payload = (await this.request(peer, "path.read", {
       logical: remoteLogical,
-    })) as { contentBase64: string };
-    const dir = mkdtempSync(join(tmpdir(), "envsync-pull-"));
-    const tmp = join(dir, "file");
-    writeFileSync(tmp, Buffer.from(content.contentBase64, "base64"));
-    return tmp;
+    })) as PathPayload;
+    if (payload.missing || !payload.contentBase64 || !payload.kind) {
+      return null;
+    }
+
+    const staging = mkdtempSync(join(tmpdir(), "envsync-pull-"));
+    if (payload.kind === "file") {
+      const tmp = join(staging, payload.entryName ?? "file");
+      writeFileSync(tmp, Buffer.from(payload.contentBase64, "base64"));
+      return tmp;
+    }
+
+    const archive = join(staging, "payload.tar.gz");
+    writeFileSync(archive, Buffer.from(payload.contentBase64, "base64"));
+    execFileSync("tar", ["-C", staging, "-xzf", archive]);
+    return payload.entryName ? join(staging, payload.entryName) : staging;
   }
 
   async pushEnv(

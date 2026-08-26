@@ -1,4 +1,4 @@
-import { mkdirSync } from "node:fs";
+import { mkdirSync, existsSync } from "node:fs";
 import type { CatalogItem } from "@envsync/catalog";
 import {
   backupDir,
@@ -146,9 +146,23 @@ export class SyncSessionService {
         for (const raw of provider.paths) {
           const localPath = expandHome(raw);
           if (direction === "push") {
+            if (!existsSync(localPath)) {
+              this.store.addActivity(
+                "skip",
+                `Path local ausente, ignorado no push: ${raw}`,
+              );
+              continue;
+            }
             await this.peerTransport.pushPath(peer, localPath, raw);
           } else {
             const temp = await this.peerTransport.pullPath(peer, raw);
+            if (!temp) {
+              this.store.addActivity(
+                "skip",
+                `Path remoto ausente, ignorado no pull: ${raw}`,
+              );
+              continue;
+            }
             await filesPlugin.apply({
               direction: "pull",
               sourcePath: temp,
