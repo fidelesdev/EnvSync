@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import { dataDir, socketPath } from "@envsync/core";
 import { PRODUCT_NAME } from "@envsync/protocol";
+import { CatalogService } from "./catalog-service.js";
 import { DiscoveryService } from "./discovery.js";
 import { createHandlers } from "./handlers.js";
 import { HttpApiServer } from "./http-api.js";
@@ -15,8 +16,9 @@ async function main(): Promise<void> {
   const store = new DaemonStore(root);
   const identity = loadOrCreateIdentity(join(root, "certs"));
   const transport = new TlsPeerTransport(identity);
-  const sync = new SyncSessionService(store, transport);
-  const handlers = createHandlers(store, identity, sync);
+  const catalog = new CatalogService(store, transport);
+  const sync = new SyncSessionService(store, transport, catalog);
+  const handlers = createHandlers(store, identity, sync, catalog);
 
   const ipc = new IpcServer(socketPath(), handlers);
   await ipc.start();
@@ -24,7 +26,7 @@ async function main(): Promise<void> {
   const http = new HttpApiServer({ handler: handlers });
   const httpInfo = await http.start();
 
-  const peerServer = new TlsPeerServer(identity, store);
+  const peerServer = new TlsPeerServer(identity, store, catalog);
   peerServer.start();
 
   const discovery = new DiscoveryService(store, identity.fingerprint);

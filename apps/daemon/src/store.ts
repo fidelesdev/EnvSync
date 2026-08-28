@@ -5,7 +5,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
-import { DEFAULT_CATALOG, type Catalog } from "@envsync/catalog";
+import { DEFAULT_CATALOG, type Catalog, type CatalogItem, type CatalogState, EMPTY_CATALOG_STATE } from "@envsync/catalog";
 import { dataDir } from "@envsync/core";
 import type { ActivityEntry, PeerInfo, SyncPlan } from "@envsync/protocol";
 
@@ -20,7 +20,9 @@ export type DaemonStoreData = {
   selectedItemIds: string[];
   trustedPeers: TrustedPeer[];
   activity: ActivityEntry[];
+  /** @deprecated legado — migrado para catalogState */
   catalogOverlay: Catalog | null;
+  catalogState: CatalogState | null;
 };
 
 const defaultStore = (): DaemonStoreData => ({
@@ -29,6 +31,7 @@ const defaultStore = (): DaemonStoreData => ({
   trustedPeers: [],
   activity: [],
   catalogOverlay: null,
+  catalogState: null,
 });
 
 export class DaemonStore {
@@ -51,15 +54,55 @@ export class DaemonStore {
     const path = this.storePath();
     if (!existsSync(path)) return defaultStore();
     const parsed = JSON.parse(readFileSync(path, "utf8")) as DaemonStoreData;
-    return { ...defaultStore(), ...parsed };
+    const merged = { ...defaultStore(), ...parsed };
+    if (!merged.catalogState && merged.catalogOverlay) {
+      merged.catalogState = {
+        customItems: merged.catalogOverlay.items.filter(
+          (item) => !DEFAULT_CATALOG.items.some((seed) => seed.id === item.id),
+        ),
+        hiddenItemIds: [],
+      };
+    }
+    return merged;
   }
 
   save(): void {
     writeFileSync(this.storePath(), JSON.stringify(this.data, null, 2));
   }
 
-  getCatalog(): Catalog {
-    return this.data.catalogOverlay ?? DEFAULT_CATALOG;
+  getCatalogState(): CatalogState {
+    return this.data.catalogState ?? EMPTY_CATALOG_STATE;
+  }
+
+  private persistCatalogState(state: CatalogState): void {
+    this.data.catalogState = state;
+    this.save();
+  }
+
+  addCustomItem(item: CatalogItem): void {
+    const state = this.getCatalogState();
+    const customItems = [
+      ...state.customItems.filter((entry) => entry.id !== item.id),
+      item,
+    ];
+    this.persistCatalogState({ ...state, customItems });
+    this.addActivity("catalog", `Pasta adicionada: ${item.label}`);
+  }
+
+  removeCustomItem(itemId: string): void {
+    const state = this.getCatalogState();
+    this.persistCatalogState({
+      ...state,
+      customItems: state.customItems.filter((item) => item.id !== itemId),
+    });
+    this.addActivity("catalog", `Pasta removida: ${itemId}`);
+  }
+
+  hideCatalogItem(itemId: string): void {
+    const state = this.getCatalogState();
+    const hiddenItemIds = [...new Set([...state.hiddenItemIds, itemId])];
+    this.persistCatalogState({ ...state, hiddenItemIds });
+    this.addActivity("catalog", `Item oculto: ${itemId}`);
   }
 
   getSelected(): string[] {

@@ -1,6 +1,14 @@
-import type { PeerInfo } from "@envsync/protocol";
+import type { CatalogSnapshot, PeerInfo } from "@envsync/protocol";
 import type { ItemInventory } from "@envsync/core";
 import type { PackageManager } from "@envsync/catalog";
+
+export type PathInspectResult = {
+  missing: boolean;
+  fingerprint: string;
+  isDirectory?: boolean;
+  size?: number;
+  preview?: string;
+};
 
 export type PeerTransport = {
   fetchInventory(peer: PeerInfo, itemIds: string[]): Promise<ItemInventory[]>;
@@ -12,6 +20,8 @@ export type PeerTransport = {
   pushPath(peer: PeerInfo, localPath: string, remoteLogical: string): Promise<void>;
   /** Retorna caminho local temporário, ou null se o remoto não tiver o path. */
   pullPath(peer: PeerInfo, remoteLogical: string): Promise<string | null>;
+  inspectPath(peer: PeerInfo, remoteLogical: string): Promise<PathInspectResult>;
+  fetchCatalogSnapshot(peer: PeerInfo): Promise<import("@envsync/protocol").CatalogSnapshot>;
   pushEnv(
     peer: PeerInfo,
     keys: string[],
@@ -41,6 +51,20 @@ export class LoopbackPeerTransport implements PeerTransport {
   async pullPath(_peer: PeerInfo, remoteLogical: string): Promise<string | null> {
     const expanded = remoteLogical.replace(/^~/, process.env.HOME ?? "");
     return expanded;
+  }
+
+  async inspectPath(_peer: PeerInfo, remoteLogical: string): Promise<PathInspectResult> {
+    const expanded = remoteLogical.replace(/^~/, process.env.HOME ?? "");
+    return {
+      missing: false,
+      fingerprint: "loopback",
+      preview: undefined,
+      size: 0,
+    };
+  }
+
+  async fetchCatalogSnapshot(): Promise<CatalogSnapshot> {
+    return { deviceName: "loopback", items: [] };
   }
 
   async pushEnv(): Promise<void> {}

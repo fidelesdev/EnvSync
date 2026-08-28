@@ -6,14 +6,14 @@ type Props = {
   selectedPeerId: string;
   plan: SyncPlanView | null;
   onPlan: (plan: SyncPlanView | null) => void;
-  onGoConflicts: () => void;
+  onOpenConfirm: () => void;
 };
 
 export function PlanPage({
   selectedPeerId,
   plan,
   onPlan,
-  onGoConflicts,
+  onOpenConfirm,
 }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -22,10 +22,10 @@ export function PlanPage({
     setBusy(true);
     setError("");
     try {
-      if (!selectedPeerId) throw new Error("Selecione um peer em Dispositivos");
+      if (!selectedPeerId) throw new Error("Selecione um dispositivo");
       const selection = await ipc<{ itemIds: string[] }>("selection.get");
       if (selection.itemIds.length === 0) {
-        throw new Error("Selecione ao menos um item no Catálogo");
+        throw new Error("Selecione itens no catálogo");
       }
       const next = await ipc<SyncPlanView>("sync.buildPlan", {
         peerId: selectedPeerId,
@@ -39,29 +39,12 @@ export function PlanPage({
     }
   }
 
-  async function confirm() {
-    if (!plan) return;
-    setBusy(true);
-    setError("");
-    try {
-      const next = await ipc<SyncPlanView>("sync.confirm", { planId: plan.id });
-      onPlan(next);
-      const hasConflicts = next.actions.some((action) => action.kind === "conflict");
-      if (hasConflicts) onGoConflicts();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(false);
-    }
-  }
+  const canConfirm = Boolean(plan && !plan.confirmed);
 
   return (
     <div className="stack">
       <header className="page-head">
-        <h2>Plano de sincronização</h2>
-        <p>
-          Nenhuma alteração é aplicada sem o botão <strong>Confirmar</strong>.
-        </p>
+        <h2>Plano</h2>
       </header>
       <div className="row">
         <button type="button" onClick={() => void build()} disabled={busy}>
@@ -70,17 +53,16 @@ export function PlanPage({
         <button
           type="button"
           className="primary"
-          disabled={busy || !plan || plan.confirmed}
-          onClick={() => void confirm()}
+          disabled={busy || !canConfirm}
+          onClick={onOpenConfirm}
         >
-          Confirmar
+          Revisar e aplicar…
         </button>
       </div>
       {plan ? (
         <div className="panel stack">
           <p className="muted">
-            Plano {plan.id.slice(0, 8)}… ·{" "}
-            {plan.confirmed ? "confirmado" : "aguardando confirmação"}
+            {plan.confirmed ? "Plano confirmado" : "Aguardando confirmação"}
           </p>
           {plan.actions.map((action) => (
             <div className="item" key={action.itemId + action.kind}>
@@ -105,7 +87,7 @@ export function PlanPage({
           ))}
         </div>
       ) : (
-        <div className="panel muted">Nenhum plano montado ainda.</div>
+        <div className="panel muted">Nenhum plano montado.</div>
       )}
       {error ? <p className="error">{error}</p> : null}
     </div>

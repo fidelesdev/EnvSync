@@ -92,6 +92,20 @@ button:disabled {
   box-shadow: none;
 }
 
+input[type="text"] {
+  border: 1px solid var(--line-strong);
+  background: var(--panel-solid);
+  color: var(--ink);
+  border-radius: 0.7rem;
+  padding: 0.55rem 0.85rem;
+  min-width: 10rem;
+}
+
+input[type="text"].grow {
+  flex: 1;
+  min-width: 12rem;
+}
+
 code {
   font-family: var(--mono);
   font-size: 0.86em;
@@ -233,16 +247,6 @@ code {
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
 }
 
-.sidebar-foot {
-  margin-top: auto;
-  padding: 0.75rem;
-  border-radius: 0.85rem;
-  border: 1px dashed var(--line-strong);
-  color: var(--muted);
-  font-size: 0.75rem;
-  line-height: 1.4;
-}
-
 .content {
   padding: 1.6rem 1.7rem 2rem;
   animation: fade-in 220ms ease;
@@ -374,6 +378,204 @@ code {
 .mono {
   font-family: var(--mono);
   font-size: 0.82em;
+}
+
+.device-grid {
+  display: grid;
+  gap: 0.85rem;
+  grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+}
+
+.device-card {
+  display: grid;
+  gap: 0.55rem;
+  width: 100%;
+  text-align: left;
+  padding: 1rem 1.1rem;
+  border-radius: var(--radius);
+  border: 2px solid var(--line);
+  background: var(--panel-solid);
+  box-shadow: var(--shadow);
+}
+
+.device-card:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
+}
+
+.device-card[data-selected="true"] {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent-soft) 55%, white);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.device-card-top {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.device-select-mark {
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 50%;
+  border: 2px solid var(--line-strong);
+  background: white;
+  flex-shrink: 0;
+}
+
+.device-card[data-selected="true"] .device-select-mark {
+  border-color: var(--accent);
+  background: var(--accent);
+  box-shadow: inset 0 0 0 3px white;
+}
+
+.device-meta {
+  font-size: 0.78rem;
+}
+
+.device-actions {
+  margin-top: 0.25rem;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: 1.25rem;
+  background: rgba(18, 32, 44, 0.45);
+  backdrop-filter: blur(4px);
+}
+
+.modal-panel {
+  width: min(36rem, 100%);
+  max-height: min(85vh, 44rem);
+  overflow: auto;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: var(--panel-solid);
+  box-shadow: 0 24px 60px rgba(18, 32, 44, 0.22);
+}
+
+.modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 1rem 1.15rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.modal-head h3 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.modal-close {
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border-radius: 0.55rem;
+  font-size: 1.25rem;
+  line-height: 1;
+}
+
+.modal-body {
+  padding: 1rem 1.15rem 1.15rem;
+}
+
+.modal-section h4 {
+  margin: 0 0 0.45rem;
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.modal-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 0.65rem;
+}
+
+.modal-list li {
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.65rem 0.75rem;
+  border-radius: 0.75rem;
+  border: 1px solid var(--line);
+  background: var(--paper);
+}
+
+.modal-actions {
+  justify-content: flex-end;
+  margin-top: 0.5rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--line);
+}
+
+.conflict-card {
+  display: grid;
+  gap: 0.55rem;
+  padding: 0.85rem;
+  border-radius: 0.85rem;
+  border: 1px solid var(--line);
+  background: var(--paper);
+}
+
+.conflict-card[data-resolved="true"] {
+  opacity: 0.75;
+}
+
+.conflict-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+}
+
+.conflict-detail {
+  display: grid;
+  gap: 0.15rem;
+  margin-top: 0.35rem;
+}
+
+.diff-preview {
+  margin: 0;
+  padding: 0.65rem 0.75rem;
+  border-radius: 0.65rem;
+  border: 1px solid var(--line);
+  background: #0f1720;
+  color: #d8e6f2;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  line-height: 1.45;
+  overflow: auto;
+  max-height: 14rem;
+  white-space: pre-wrap;
+}
+
+.catalog-section-title {
+  margin: 0 0 0.45rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+.catalog-section + .catalog-section {
+  margin-top: 0.35rem;
+}
+
+.catalog-custom strong {
+  font-size: 0.9rem;
+}
+
+.catalog-item-actions {
+  justify-content: flex-end;
 }
 
 @keyframes pulse-orb {

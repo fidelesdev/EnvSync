@@ -13,6 +13,8 @@ import {
   getPlugin,
 } from "@envsync/plugins";
 import type { ConflictChoice, SyncPlan } from "@envsync/protocol";
+import { buildConflictDetails } from "./conflict-details.js";
+import type { CatalogService } from "./catalog-service.js";
 import { buildLocalInventory, readManagedEnvValues } from "./inventory.js";
 import type { DaemonStore } from "./store.js";
 import type { PeerTransport } from "./peer-client.js";
@@ -21,6 +23,7 @@ export class SyncSessionService {
   constructor(
     private readonly store: DaemonStore,
     private readonly peerTransport: PeerTransport,
+    private readonly catalog: CatalogService,
   ) {}
 
   async buildPlan(peerId: string, itemIds: string[]): Promise<SyncPlan> {
@@ -29,10 +32,20 @@ export class SyncSessionService {
     if (!peer) throw new Error("Peer não encontrado");
     if (!peer.trusted) throw new Error("Peer não confiado — pareie antes");
 
-    const catalog = this.store.getCatalog();
+    const catalog = await this.catalog.getEffectiveCatalog();
     const local = await buildLocalInventory(catalog, itemIds);
     const remote = await this.peerTransport.fetchInventory(peer, itemIds);
     const plan = buildPlan(local, remote, itemIds, peerId);
+    for (const action of plan.actions) {
+      if (action.kind !== "conflict") continue;
+      const item = catalog.items.find((entry) => entry.id === action.itemId);
+      if (!item) continue;
+      action.conflictDetails = await buildConflictDetails(
+        item,
+        peer,
+        this.peerTransport,
+      );
+    }
     this.store.savePlan(plan);
     this.store.addActivity("plan", `Plano ${plan.id} criado para ${peer.name}`);
     return plan;
@@ -47,7 +60,7 @@ export class SyncSessionService {
     const sessionBackup = backupDir(planId);
     mkdirSync(sessionBackup, { recursive: true });
 
-    const catalog = this.store.getCatalog();
+    const catalog = await this.catalog.getEffectiveCatalog();
     const peer = this.store.listDiscovered().find((entry) => entry.id === plan.peerId);
     if (!peer) throw new Error("Peer offline");
 
@@ -86,7 +99,7 @@ export class SyncSessionService {
       throw new Error("Conflito não encontrado");
     }
 
-    const catalog = this.store.getCatalog();
+    const catalog = await this.catalog.getEffectiveCatalog();
     const item = catalog.items.find((entry) => entry.id === itemId);
     if (!item) throw new Error("Item não encontrado");
 
@@ -107,6 +120,66 @@ export class SyncSessionService {
     action.summary = "Aceito remoto";
     this.store.updatePlan(plan);
     this.store.addActivity("conflict", `Aceito remoto: ${itemId}`);
+    return plan;
+  }
+
+  async resolveConflictDetail(
+    planId: string,
+    itemId: string,
+    detailId: string,
+    choice: ConflictChoice,
+  ): Promise<SyncPlan> {
+    const plan = this.store.getPlan(planId);
+    if (!plan) throw new Error("Plano não encontrado");
+    if (!plan.confirmed) {
+      throw new Error("Confirme o plano antes de resolver conflitos");
+    }
+
+    const action = plan.actions.find((entry) => entry.itemId === itemId);
+    if (!action || action.kind !== "conflict") {
+      throw new Error("Conflito não encontrado");
+    }
+
+    const detail = action.conflictDetails?.find((entry) => entry.id === detailId);
+    if (!detail) throw new Error("Detalhe de conflito não encontrado");
+    if (detail.resolution) throw new Error("Este conflito já foi resolvido");
+
+    const peer = this.store.listDiscovered().find((entry) => entry.id === plan.peerId);
+    if (!peer) throw new Error("Peer offline");
+
+    const sessionBackup = backupDir(planId);
+    mkdirSync(sessionBackup, { recursive: true });
+    const ctx = { dataDir: this.store.root, backupRoot: sessionBackup };
+
+    detail.resolution = choice;
+
+    if (choice === "accept_remote" && detail.kind === "path") {
+      const localPath = expandHome(detail.label);
+      const temp = await this.peerTransport.pullPath(peer, detail.label);
+      if (!temp) {
+        throw new Error(`Remoto não tem o path: ${detail.label}`);
+      }
+      await filesPlugin.apply({
+        direction: "pull",
+        sourcePath: temp,
+        targetPath: localPath,
+        ctx,
+        confirmed: true,
+      });
+      this.store.addActivity("conflict", `Aceito remoto: ${detail.label}`);
+    } else if (choice === "keep_local") {
+      this.store.addActivity("conflict", `Mantido local: ${detail.label}`);
+    } else {
+      this.store.addActivity("conflict", `Pulado: ${detail.label}`);
+    }
+
+    const pending = action.conflictDetails?.some((entry) => !entry.resolution);
+    if (!pending) {
+      action.kind = "skip";
+      action.summary = "Todos os conflitos resolvidos";
+    }
+
+    this.store.updatePlan(plan);
     return plan;
   }
 

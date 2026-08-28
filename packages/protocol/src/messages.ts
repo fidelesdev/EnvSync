@@ -5,6 +5,9 @@ export type IpcMethod =
   | "daemon.ping"
   | "daemon.shutdown"
   | "catalog.list"
+  | "catalog.survey"
+  | "catalog.addCustomPath"
+  | "catalog.removeItem"
   | "selection.get"
   | "selection.set"
   | "peers.list"
@@ -13,6 +16,7 @@ export type IpcMethod =
   | "sync.buildPlan"
   | "sync.confirm"
   | "sync.resolveConflict"
+  | "sync.resolveConflictDetail"
   | "sync.status"
   | "activity.list"
   | "backup.restore";
@@ -29,6 +33,18 @@ export type PeerInfo = {
 
 export type PlanActionKind = "install" | "copy" | "skip" | "conflict";
 
+export type ConflictDetail = {
+  id: string;
+  label: string;
+  kind: "path" | "package" | "env";
+  localSummary: string;
+  remoteSummary: string;
+  diff?: string;
+  localPreview?: string;
+  remotePreview?: string;
+  resolution?: ConflictChoice;
+};
+
 export type PlanAction = {
   itemId: string;
   kind: PlanActionKind;
@@ -36,6 +52,7 @@ export type PlanAction = {
   summary: string;
   localFingerprint?: string;
   remoteFingerprint?: string;
+  conflictDetails?: ConflictDetail[];
 };
 
 export type SyncPlan = {
@@ -53,4 +70,40 @@ export type ActivityEntry = {
   at: string;
   kind: string;
   message: string;
+};
+
+export type CatalogSurveySectionId = "remoteOnly" | "both" | "localOnly";
+
+export type CatalogSurveyItem = {
+  id: string;
+  label: string;
+  groupId: string;
+  source: "seed" | "discovered" | "custom";
+  localPresent: boolean;
+  remotePresent: boolean;
+  inSync: boolean;
+  detail?: string;
+};
+
+export type CatalogSurveySection = {
+  id: CatalogSurveySectionId;
+  title: string;
+  items: CatalogSurveyItem[];
+};
+
+export type CatalogSurvey = {
+  deviceName: string;
+  peerDeviceName: string;
+  groups: Array<{ id: string; label: string; icon: string }>;
+  sections: CatalogSurveySection[];
+};
+
+export type CatalogSnapshot = {
+  deviceName: string;
+  items: Array<{
+    id: string;
+    label: string;
+    groupId: string;
+    providers: unknown[];
+  }>;
 };

@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { ipc } from "./ipc/client";
+import { ConfirmPlanModal } from "./components/ConfirmPlanModal";
 import { ActivityPage } from "./pages/ActivityPage";
 import { CatalogPage } from "./pages/CatalogPage";
 import { ConflictsPage } from "./pages/ConflictsPage";
 import { DevicesPage } from "./pages/DevicesPage";
 import { PlanPage } from "./pages/PlanPage";
+import type { ConflictDetail } from "@envsync/protocol";
 
 type Tab = "devices" | "catalog" | "plan" | "conflicts" | "activity";
 
@@ -25,6 +27,7 @@ export type SyncPlanView = {
     summary: string;
     localFingerprint?: string;
     remoteFingerprint?: string;
+    conflictDetails?: ConflictDetail[];
   }>;
 };
 
@@ -42,6 +45,8 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
   const [selectedPeerId, setSelectedPeerId] = useState<string>("");
   const [plan, setPlan] = useState<SyncPlanView | null>(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [confirmBusy, setConfirmBusy] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -67,10 +72,27 @@ export function App() {
     };
   }, []);
 
-  const deviceLabel = useMemo(() => {
-    if (!ping) return "aguardando daemon";
-    return `${ping.deviceName} · ${ping.fingerprint.slice(0, 10)}…`;
-  }, [ping]);
+  const conflictCount = useMemo(
+    () => plan?.actions.filter((action) => action.kind === "conflict").length ?? 0,
+    [plan],
+  );
+
+  async function confirmPlan() {
+    if (!plan) return;
+    setConfirmBusy(true);
+    try {
+      const next = await ipc<SyncPlanView>("sync.confirm", { planId: plan.id });
+      setPlan(next);
+      setConfirmOpen(false);
+      if (next.actions.some((action) => action.kind === "conflict")) {
+        setTab("conflicts");
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setConfirmBusy(false);
+    }
+  }
 
   return (
     <div className="app-shell">
@@ -80,14 +102,13 @@ export function App() {
             <span className="brand-orb" aria-hidden />
             <h1>EnvSync</h1>
           </div>
-          <p className="brand-sub">sync seletiva entre máquinas na LAN</p>
           <div className="status-pill" data-online={Boolean(ping)}>
             <span className="status-dot" aria-hidden />
-            <span>{ping ? "daemon online" : "daemon offline"}</span>
+            <span>{ping ? "online" : "offline"}</span>
           </div>
-          <p className="brand-sub" style={{ marginTop: "0.55rem" }}>
-            {deviceLabel}
-          </p>
+          {ping ? (
+            <p className="brand-sub mono">{ping.deviceName}</p>
+          ) : null}
         </div>
 
         <div className="nav-list">
@@ -99,13 +120,14 @@ export function App() {
               onClick={() => setTab(entry.id)}
             >
               <span className="nav-icon" aria-hidden data-tab={entry.id} />
-              <span>{entry.label}</span>
+              <span>
+                {entry.label}
+                {entry.id === "conflicts" && conflictCount > 0
+                  ? ` (${conflictCount})`
+                  : ""}
+              </span>
             </button>
           ))}
-        </div>
-
-        <div className="sidebar-foot">
-          Nada é aplicado sem confirmação explícita do plano.
         </div>
       </aside>
 
@@ -123,13 +145,15 @@ export function App() {
             onSelectPeer={setSelectedPeerId}
           />
         ) : null}
-        {tab === "catalog" ? <CatalogPage /> : null}
+        {tab === "catalog" ? (
+          <CatalogPage selectedPeerId={selectedPeerId} />
+        ) : null}
         {tab === "plan" ? (
           <PlanPage
             selectedPeerId={selectedPeerId}
             plan={plan}
             onPlan={setPlan}
-            onGoConflicts={() => setTab("conflicts")}
+            onOpenConfirm={() => setConfirmOpen(true)}
           />
         ) : null}
         {tab === "conflicts" ? (
@@ -137,6 +161,14 @@ export function App() {
         ) : null}
         {tab === "activity" ? <ActivityPage /> : null}
       </main>
+
+      <ConfirmPlanModal
+        open={confirmOpen}
+        plan={plan}
+        busy={confirmBusy}
+        onClose={() => setConfirmOpen(false)}
+        onConfirm={() => void confirmPlan()}
+      />
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import type { ConflictChoice } from "@envsync/protocol";
 import { PRODUCT_NAME } from "@envsync/protocol";
+import type { CatalogService } from "./catalog-service.js";
 import type { DeviceIdentity } from "./identity.js";
 import type { DaemonStore } from "./store.js";
 import type { SyncSessionService } from "./sync-session.js";
@@ -9,6 +10,7 @@ export function createHandlers(
   store: DaemonStore,
   identity: DeviceIdentity,
   sync: SyncSessionService,
+  catalog: CatalogService,
 ) {
   return async (method: string, params: unknown): Promise<unknown> => {
     const body = (params ?? {}) as Record<string, unknown>;
@@ -30,7 +32,22 @@ export function createHandlers(
         return { ok: true, shuttingDown: true };
       }
       case "catalog.list":
-        return store.getCatalog();
+        return catalog.getEffectiveCatalog();
+      case "catalog.survey": {
+        const peerId = String(body.peerId ?? "");
+        return catalog.survey(peerId);
+      }
+      case "catalog.addCustomPath": {
+        const label = String(body.label ?? "");
+        const path = String(body.path ?? "");
+        if (!path.trim()) throw new Error("Informe o caminho da pasta");
+        return catalog.addCustomPath(label, path);
+      }
+      case "catalog.removeItem": {
+        const itemId = String(body.itemId ?? "");
+        if (!itemId) throw new Error("itemId obrigatório");
+        return catalog.removeItem(itemId);
+      }
       case "selection.get":
         return { itemIds: store.getSelected() };
       case "selection.set": {
@@ -68,6 +85,13 @@ export function createHandlers(
         const itemId = String(body.itemId ?? "");
         const choice = body.choice as ConflictChoice;
         return sync.resolveConflict(planId, itemId, choice);
+      }
+      case "sync.resolveConflictDetail": {
+        const planId = String(body.planId ?? "");
+        const itemId = String(body.itemId ?? "");
+        const detailId = String(body.detailId ?? "");
+        const choice = body.choice as ConflictChoice;
+        return sync.resolveConflictDetail(planId, itemId, detailId, choice);
       }
       case "sync.status": {
         const planId = String(body.planId ?? "");

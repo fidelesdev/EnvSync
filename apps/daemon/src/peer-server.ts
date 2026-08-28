@@ -17,11 +17,12 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import type { PackageManager } from "@envsync/catalog";
 import { backupDir, expandHome, type ItemInventory } from "@envsync/core";
-import { envPlugin, filesPlugin, getPlugin } from "@envsync/plugins";
-import type { PeerInfo } from "@envsync/protocol";
+import { envPlugin, filesPlugin, fingerprintPath, getPlugin } from "@envsync/plugins";
+import type { CatalogSnapshot, PeerInfo } from "@envsync/protocol";
+import type { CatalogService } from "./catalog-service.js";
 import type { DeviceIdentity } from "./identity.js";
 import { buildLocalInventory, readManagedEnvValues } from "./inventory.js";
-import type { PeerTransport } from "./peer-client.js";
+import type { PeerTransport, PathInspectResult } from "./peer-client.js";
 import { PEER_PORT } from "./discovery.js";
 import type { DaemonStore } from "./store.js";
 
@@ -125,6 +126,7 @@ export class TlsPeerServer {
   constructor(
     private readonly identity: DeviceIdentity,
     private readonly store: DaemonStore,
+    private readonly catalog: CatalogService,
   ) {}
 
   start(port = PEER_PORT): void {
@@ -181,7 +183,11 @@ export class TlsPeerServer {
   ): Promise<unknown> {
     if (method === "inventory.get") {
       const itemIds = params.itemIds as string[];
-      return buildLocalInventory(this.store.getCatalog(), itemIds);
+      const effective = await this.catalog.getEffectiveCatalog();
+      return buildLocalInventory(effective, itemIds);
+    }
+    if (method === "catalog.snapshot") {
+      return this.catalog.getSnapshot();
     }
     if (method === "package.install") {
       const manager = params.manager as PackageManager;
@@ -213,6 +219,27 @@ export class TlsPeerServer {
     }
     if (method === "path.read") {
       return packPath(expandHome(params.logical as string));
+    }
+    if (method === "path.inspect") {
+      const abs = expandHome(params.logical as string);
+      if (!existsSync(abs)) {
+        return { missing: true, fingerprint: "" };
+      }
+      const info = statSync(abs);
+      const fingerprint = fingerprintPath(abs);
+      const base = {
+        missing: false,
+        fingerprint,
+        isDirectory: info.isDirectory(),
+        size: info.size,
+      };
+      if (!info.isFile() || info.size > 48_000) return base;
+      try {
+        const preview = readFileSync(abs, "utf8");
+        return { ...base, preview };
+      } catch {
+        return base;
+      }
     }
     if (method === "path.put") {
       const target = expandHome(params.logical as string);
@@ -330,6 +357,19 @@ export class TlsPeerTransport implements PeerTransport {
     writeFileSync(archive, Buffer.from(payload.contentBase64, "base64"));
     execFileSync("tar", ["-C", staging, "-xzf", archive]);
     return payload.entryName ? join(staging, payload.entryName) : staging;
+  }
+
+  async inspectPath(
+    peer: PeerInfo,
+    remoteLogical: string,
+  ): Promise<PathInspectResult> {
+    return (await this.request(peer, "path.inspect", {
+      logical: remoteLogical,
+    })) as PathInspectResult;
+  }
+
+  fetchCatalogSnapshot(peer: PeerInfo): Promise<CatalogSnapshot> {
+    return this.request(peer, "catalog.snapshot", {}) as Promise<CatalogSnapshot>;
   }
 
   async pushEnv(

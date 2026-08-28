@@ -36,72 +36,78 @@ export function DevicesPage({ selectedPeerId, onSelectPeer }: Props) {
   return (
     <div className="stack">
       <header className="page-head">
-        <h2>Dispositivos na LAN</h2>
-        <p>
-          Pareie pelo fingerprint antes de sincronizar. Só peers confiados
-          entram no plano.
-        </p>
+        <h2>Dispositivos</h2>
       </header>
-      <div className="panel stack">
+      <div className="device-grid">
         {peers.length === 0 ? (
-          <p className="muted">Nenhum peer anunciado ainda (mDNS).</p>
+          <p className="muted panel">Nenhum dispositivo na rede.</p>
         ) : (
-          peers.map((peer) => (
-            <div className="item" key={peer.id}>
-              <input
-                type="radio"
-                name="peer"
-                checked={selectedPeerId === peer.id}
-                onChange={() => onSelectPeer(peer.id)}
-                aria-label={`Selecionar ${peer.name}`}
-              />
-              <div>
-                <strong>{peer.name}</strong>
-                <div className="muted mono">
-                  {peer.host}:{peer.port} · {peer.fingerprint.slice(0, 16)}…
+          peers.map((peer) => {
+            const selected = selectedPeerId === peer.id;
+            return (
+              <button
+                key={peer.id}
+                type="button"
+                className="device-card"
+                data-selected={selected}
+                onClick={() => onSelectPeer(peer.id)}
+                aria-pressed={selected}
+              >
+                <div className="device-card-top">
+                  <span className="device-select-mark" aria-hidden />
+                  <strong>{peer.name}</strong>
                 </div>
-              </div>
-              <div className="row">
-                <span
-                  className="badge"
-                  data-tone={peer.online ? "ok" : undefined}
-                >
-                  {peer.online ? "online" : "offline"}
-                </span>
-                <span
-                  className="badge"
-                  data-tone={peer.trusted ? "accent" : "warn"}
-                >
-                  {peer.trusted ? "confiável" : "não pareado"}
-                </span>
-                {peer.trusted ? (
-                  <button
-                    type="button"
-                    onClick={() =>
-                      void ipc("peers.unpair", {
-                        fingerprint: peer.fingerprint,
-                      }).then(refresh)
-                    }
+                <div className="muted mono device-meta">
+                  {peer.host}:{peer.port}
+                </div>
+                <div className="row">
+                  <span
+                    className="badge"
+                    data-tone={peer.online ? "ok" : undefined}
                   >
-                    Remover
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    className="primary"
-                    onClick={() =>
-                      void ipc("peers.pair", {
-                        fingerprint: peer.fingerprint,
-                        name: peer.name,
-                      }).then(refresh)
-                    }
+                    {peer.online ? "online" : "offline"}
+                  </span>
+                  <span
+                    className="badge"
+                    data-tone={peer.trusted ? "accent" : "warn"}
                   >
-                    Parear
-                  </button>
-                )}
-              </div>
-            </div>
-          ))
+                    {peer.trusted ? "pareado" : "não pareado"}
+                  </span>
+                </div>
+                <div
+                  className="row device-actions"
+                  onClick={(event) => event.stopPropagation()}
+                  onKeyDown={(event) => event.stopPropagation()}
+                >
+                  {peer.trusted ? (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        void ipc("peers.unpair", {
+                          fingerprint: peer.fingerprint,
+                        }).then(refresh)
+                      }
+                    >
+                      Desparear
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className="primary"
+                      onClick={() =>
+                        void ipc("peers.pair", {
+                          fingerprint: peer.fingerprint,
+                          name: peer.name,
+                        }).then(refresh)
+                      }
+                    >
+                      Parear
+                    </button>
+                  )}
+                </div>
+              </button>
+            );
+          })
         )}
       </div>
       {message ? <p className="error">{message}</p> : null}
