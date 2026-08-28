@@ -6,6 +6,10 @@ export type IpcMethod =
   | "daemon.shutdown"
   | "catalog.list"
   | "catalog.survey"
+  | "catalog.surveyStatus"
+  | "catalog.startSurvey"
+  | "catalog.ensureSurvey"
+  | "catalog.pickFolder"
   | "catalog.addCustomPath"
   | "catalog.removeItem"
   | "selection.get"
@@ -13,6 +17,8 @@ export type IpcMethod =
   | "peers.list"
   | "peers.pair"
   | "peers.unpair"
+  | "peers.select"
+  | "peers.getSelected"
   | "sync.buildPlan"
   | "sync.confirm"
   | "sync.resolveConflict"
@@ -96,6 +102,22 @@ export type CatalogSurvey = {
   peerDeviceName: string;
   groups: Array<{ id: string; label: string; icon: string }>;
   sections: CatalogSurveySection[];
+};
+
+export type CatalogSurveyStatus = "idle" | "running" | "done" | "error";
+
+export type CatalogSurveyProgress = {
+  peerId: string;
+  status: CatalogSurveyStatus;
+  phase: string;
+  processed: number;
+  total: number;
+  identifiedCount: number;
+  identified: CatalogSurveyItem[];
+  sections: CatalogSurveySection[];
+  survey: CatalogSurvey | null;
+  error?: string;
+  updatedAt: string;
 };
 
 export type CatalogSnapshot = {

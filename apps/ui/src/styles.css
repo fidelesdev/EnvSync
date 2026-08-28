@@ -578,6 +578,65 @@ code {
   justify-content: flex-end;
 }
 
+.catalog-progress {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.catalog-progress-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.catalog-progress-error {
+  margin: 0.35rem 0 0;
+  padding: 0.45rem 0.6rem;
+  font-size: 0.82rem;
+}
+
+.catalog-identified-btn {
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.catalog-progress-track {
+  height: 0.45rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--line) 80%, white);
+  overflow: hidden;
+}
+
+.catalog-progress-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent), #14a3b0);
+  transition: width 240ms ease;
+}
+
+.catalog-progress[data-running="true"] .catalog-progress-fill {
+  animation: catalog-pulse 1.4s ease-in-out infinite;
+}
+
+.catalog-progress[data-error="true"] .catalog-progress-track {
+  background: var(--danger-soft);
+}
+
+.identified-list li {
+  grid-template-columns: 1fr;
+}
+
+@keyframes catalog-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.65;
+  }
+}
+
 @keyframes pulse-orb {
   0%,
   100% {

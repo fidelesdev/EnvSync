@@ -32,6 +32,9 @@ async function main(): Promise<void> {
   const discovery = new DiscoveryService(store, identity.fingerprint);
   discovery.start();
 
+  catalog.bootstrapSurveys();
+  setInterval(() => catalog.bootstrapSurveys(), 30_000);
+
   store.addActivity(
     "start",
     `${PRODUCT_NAME} daemon ativo — fp ${identity.fingerprint.slice(0, 12)}…`,

@@ -12,16 +12,18 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-from PySide6.QtCore import QSettings, QTimer, QUrl
+from PySide6.QtCore import QSettings, QTimer, QUrl, QUrlQuery
 from PySide6.QtGui import QAction, QGuiApplication, QIcon
 from PySide6.QtWidgets import (
     QApplication,
+    QFileDialog,
     QMainWindow,
     QMenu,
     QSystemTrayIcon,
     QVBoxLayout,
     QWidget,
 )
+from PySide6.QtWebEngineCore import QWebEnginePage, QWebEngineUrlScheme
 from PySide6.QtWebEngineWidgets import QWebEngineView
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -135,6 +137,31 @@ def stop_backend() -> None:
         time.sleep(0.15)
 
 
+def register_envsync_scheme() -> None:
+    scheme = QWebEngineUrlScheme(b"envsync")
+    QWebEngineUrlScheme.registerScheme(scheme)
+
+
+class EnvSyncWebPage(QWebEnginePage):
+    def __init__(self, profile, view: QWebEngineView) -> None:
+        super().__init__(profile, view)
+        self._view = view
+
+    def acceptNavigationRequest(self, url: QUrl, _type, isMainFrame) -> bool:  # noqa: N802
+        if url.scheme() == "envsync" and url.host() == "pick-folder":
+            query = QUrlQuery(url.query())
+            req_id = query.queryItemValue("id")
+            path = QFileDialog.getExistingDirectory(
+                self._view,
+                "Selecionar pasta",
+                str(Path.home()),
+            )
+            payload = json.dumps({"id": req_id, "path": path or ""})
+            self.runJavaScript(f"window.__envsyncFolderReply?.({payload})")
+            return False
+        return super().acceptNavigationRequest(url, _type, isMainFrame)
+
+
 class EnvSyncWindow(QMainWindow):
     def __init__(self, url: str, icon: QIcon, on_close_to_tray) -> None:
         super().__init__()
@@ -144,6 +171,10 @@ class EnvSyncWindow(QMainWindow):
         self.setWindowIcon(icon)
 
         self.browser = QWebEngineView(self)
+        self.browser.setPage(
+            EnvSyncWebPage(self.browser.page().profile(), self.browser)
+        )
+        self.browser.loadFinished.connect(self._on_load_finished)
         self.browser.setUrl(QUrl(url))
 
         layout = QVBoxLayout()
@@ -164,6 +195,9 @@ class EnvSyncWindow(QMainWindow):
         state = self.settings.value("windowState")
         if state:
             self.restoreState(state)
+
+    def _on_load_finished(self, _ok: bool) -> None:
+        self.browser.page().runJavaScript("window.__ENVSYNC_DESKTOP__ = true;")
 
     def closeEvent(self, event) -> None:  # noqa: N802
         self.settings.setValue("geometry", self.saveGeometry())
@@ -283,6 +317,7 @@ class EnvSyncApp:
 
 def main() -> int:
     sys.argv[0] = "envsync"
+    register_envsync_scheme()
     start_backend()
 
     QGuiApplication.setApplicationName("envsync")

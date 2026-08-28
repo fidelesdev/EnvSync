@@ -1,35 +1,27 @@
 import {
   buildEffectiveCatalog,
   customPathItem,
-  mergeItemDefinitions,
   type Catalog,
   type CatalogItem,
   type CatalogState,
 } from "@envsync/catalog";
+import type { CatalogSurvey, CatalogSurveyProgress } from "@envsync/protocol";
 import { existsSync } from "node:fs";
 import { expandHome } from "@envsync/core";
-import { buildLocalInventory } from "./inventory.js";
+import { CatalogSurveyRunner } from "./catalog-survey-runner.js";
+import { pickFolderDialog } from "./folder-picker.js";
 import type { PeerTransport } from "./peer-client.js";
 import type { DaemonStore } from "./store.js";
-import type { CatalogSurvey, CatalogSurveyItem } from "@envsync/protocol";
-
-function itemSource(item: CatalogItem): "seed" | "discovered" | "custom" {
-  if (item.id.startsWith("auto:")) return "discovered";
-  if (item.id.startsWith("custom:")) return "custom";
-  return "seed";
-}
-
-function indexInventory(
-  rows: Awaited<ReturnType<typeof buildLocalInventory>>,
-): Map<string, (typeof rows)[number]> {
-  return new Map(rows.map((row) => [row.itemId, row]));
-}
 
 export class CatalogService {
+  readonly runner: CatalogSurveyRunner;
+
   constructor(
     private readonly store: DaemonStore,
-    private readonly peerTransport: PeerTransport,
-  ) {}
+    peerTransport: PeerTransport,
+  ) {
+    this.runner = new CatalogSurveyRunner(store, peerTransport);
+  }
 
   getCatalogState(): CatalogState {
     return this.store.getCatalogState();
@@ -47,6 +39,11 @@ export class CatalogService {
     };
   }
 
+  async pickFolder(): Promise<{ path: string | null }> {
+    const path = await pickFolderDialog();
+    return { path };
+  }
+
   async addCustomPath(label: string, path: string): Promise<Catalog> {
     const normalized = path.trim();
     const abs = expandHome(normalized);
@@ -55,6 +52,8 @@ export class CatalogService {
     }
     const item = customPathItem(label, normalized);
     this.store.addCustomItem(item);
+    const peerId = this.store.getSelectedPeerId();
+    if (peerId) this.runner.restartSurvey(peerId);
     return this.getEffectiveCatalog();
   }
 
@@ -66,91 +65,46 @@ export class CatalogService {
     }
     const selected = this.store.getSelected().filter((id) => id !== itemId);
     this.store.setSelected(selected);
+    const peerId = this.store.getSelectedPeerId();
+    if (peerId) this.runner.restartSurvey(peerId);
     return this.getEffectiveCatalog();
   }
 
+  ensureSurvey(peerId: string): CatalogSurveyProgress {
+    return this.runner.ensureSurvey(peerId);
+  }
+
+  startSurvey(peerId: string): CatalogSurveyProgress {
+    return this.runner.startSurvey(peerId);
+  }
+
+  getSurveyProgress(peerId: string): CatalogSurveyProgress {
+    return this.runner.getProgress(peerId);
+  }
+
   async survey(peerId: string): Promise<CatalogSurvey> {
-    const peer = this.store.listDiscovered().find((entry) => entry.id === peerId);
-    if (!peer) throw new Error("Selecione um dispositivo pareado");
-    if (!peer.trusted) throw new Error("Pareie o dispositivo antes de ver o catálogo");
-
-    const localCatalog = await this.getEffectiveCatalog();
-    const remoteSnapshot = await this.peerTransport.fetchCatalogSnapshot(peer);
-    const unionItems = mergeItemDefinitions([
-      ...localCatalog.items,
-      ...(remoteSnapshot.items as CatalogItem[]),
-    ]);
-
-    const itemIds = unionItems.map((item) => item.id);
-    const localRows = indexInventory(
-      await buildLocalInventory({ ...localCatalog, items: unionItems }, itemIds),
-    );
-    const remoteRows = indexInventory(
-      await this.peerTransport.fetchInventory(peer, itemIds),
-    );
-
-    const surveyItems: CatalogSurveyItem[] = [];
-
-    for (const item of unionItems) {
-      const local = localRows.get(item.id);
-      const remote = remoteRows.get(item.id);
-      const localPresent = local?.presence === "present";
-      const remotePresent = remote?.presence === "present";
-
-      if (!localPresent && !remotePresent) continue;
-
-      const inSync =
-        localPresent &&
-        remotePresent &&
-        Boolean(local?.fingerprint) &&
-        local?.fingerprint === remote?.fingerprint;
-
-      surveyItems.push({
-        id: item.id,
-        label: item.label,
-        groupId: item.groupId,
-        source: itemSource(item),
-        localPresent,
-        remotePresent,
-        inSync,
-        detail: localPresent ? local?.detail : remote?.detail,
-      });
+    const progress = this.runner.getProgress(peerId);
+    if (progress.status === "done" && progress.survey) {
+      return progress.survey;
     }
+    if (progress.status === "running") {
+      throw new Error("Catálogo ainda está sendo identificado");
+    }
+    this.runner.startSurvey(peerId);
+    throw new Error("Catálogo ainda está sendo identificado");
+  }
 
-    const localName = this.store.getDeviceName();
-    const peerName = remoteSnapshot.deviceName || peer.name;
+  bootstrapSurveys(): void {
+    const selected = this.store.getSelectedPeerId();
+    if (selected) this.runner.ensureSurvey(selected);
 
-    const remoteOnly = surveyItems.filter(
-      (item) => item.remotePresent && !item.localPresent,
-    );
-    const localOnly = surveyItems.filter(
-      (item) => item.localPresent && !item.remotePresent,
-    );
-    const both = surveyItems.filter(
-      (item) => item.localPresent && item.remotePresent,
-    );
-
-    return {
-      deviceName: localName,
-      peerDeviceName: peerName,
-      groups: localCatalog.groups,
-      sections: [
-        {
-          id: "remoteOnly",
-          title: `Só em ${peerName}`,
-          items: remoteOnly,
-        },
-        {
-          id: "both",
-          title: `Em ambos (${localName} e ${peerName})`,
-          items: both,
-        },
-        {
-          id: "localOnly",
-          title: `Só em ${localName}`,
-          items: localOnly,
-        },
-      ],
-    };
+    for (const trusted of this.store.listTrusted()) {
+      const peer = this.store
+        .listDiscovered()
+        .find((entry) => entry.fingerprint === trusted.fingerprint);
+      if (peer?.online && peer.trusted) {
+        this.runner.ensureSurvey(peer.id);
+      }
+    }
   }
 }

@@ -37,6 +37,23 @@ export function createHandlers(
         const peerId = String(body.peerId ?? "");
         return catalog.survey(peerId);
       }
+      case "catalog.surveyStatus": {
+        const peerId = String(body.peerId ?? store.getSelectedPeerId() ?? "");
+        if (!peerId) return catalog.getSurveyProgress("");
+        return catalog.getSurveyProgress(peerId);
+      }
+      case "catalog.startSurvey": {
+        const peerId = String(body.peerId ?? "");
+        if (!peerId) throw new Error("peerId obrigatório");
+        return catalog.startSurvey(peerId);
+      }
+      case "catalog.ensureSurvey": {
+        const peerId = String(body.peerId ?? "");
+        if (!peerId) throw new Error("peerId obrigatório");
+        return catalog.ensureSurvey(peerId);
+      }
+      case "catalog.pickFolder":
+        return catalog.pickFolder();
       case "catalog.addCustomPath": {
         const label = String(body.label ?? "");
         const path = String(body.path ?? "");
@@ -57,13 +74,28 @@ export function createHandlers(
       }
       case "peers.list":
         return { peers: store.listDiscovered(), trusted: store.listTrusted() };
+      case "peers.getSelected":
+        return { peerId: store.getSelectedPeerId() };
+      case "peers.select": {
+        const peerId = String(body.peerId ?? "");
+        store.setSelectedPeerId(peerId);
+        if (peerId) catalog.ensureSurvey(peerId);
+        return { peerId };
+      }
       case "peers.pair": {
         const fingerprint = String(body.fingerprint ?? "");
         const name = String(body.name ?? "peer");
         if (!fingerprint) throw new Error("fingerprint obrigatório");
         store.trustPeer({ id: fingerprint, name, fingerprint });
         store.addActivity("pair", `Peer confiado: ${name} (${fingerprint.slice(0, 12)}…)`);
-        return { ok: true };
+        const peer = store
+          .listDiscovered()
+          .find((entry) => entry.fingerprint === fingerprint);
+        if (peer) {
+          store.setSelectedPeerId(peer.id);
+          catalog.startSurvey(peer.id);
+        }
+        return { ok: true, peerId: peer?.id ?? "" };
       }
       case "peers.unpair": {
         const fingerprint = String(body.fingerprint ?? "");

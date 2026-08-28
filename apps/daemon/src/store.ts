@@ -18,6 +18,7 @@ export type TrustedPeer = {
 export type DaemonStoreData = {
   deviceName: string;
   selectedItemIds: string[];
+  selectedPeerId: string;
   trustedPeers: TrustedPeer[];
   activity: ActivityEntry[];
   /** @deprecated legado — migrado para catalogState */
@@ -28,6 +29,7 @@ export type DaemonStoreData = {
 const defaultStore = (): DaemonStoreData => ({
   deviceName: process.env.HOSTNAME ?? "envsync-device",
   selectedItemIds: [],
+  selectedPeerId: "",
   trustedPeers: [],
   activity: [],
   catalogOverlay: null,
@@ -111,6 +113,15 @@ export class DaemonStore {
 
   setSelected(ids: string[]): void {
     this.data.selectedItemIds = [...new Set(ids)];
+    this.save();
+  }
+
+  getSelectedPeerId(): string {
+    return this.data.selectedPeerId ?? "";
+  }
+
+  setSelectedPeerId(peerId: string): void {
+    this.data.selectedPeerId = peerId;
     this.save();
   }
 

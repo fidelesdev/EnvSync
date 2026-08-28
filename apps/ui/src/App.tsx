@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ipc } from "./ipc/client";
 import { ConfirmPlanModal } from "./components/ConfirmPlanModal";
 import { ActivityPage } from "./pages/ActivityPage";
@@ -6,7 +6,7 @@ import { CatalogPage } from "./pages/CatalogPage";
 import { ConflictsPage } from "./pages/ConflictsPage";
 import { DevicesPage } from "./pages/DevicesPage";
 import { PlanPage } from "./pages/PlanPage";
-import type { ConflictDetail } from "@envsync/protocol";
+import type { CatalogSurveyProgress, ConflictDetail } from "@envsync/protocol";
 
 type Tab = "devices" | "catalog" | "plan" | "conflicts" | "activity";
 
@@ -44,6 +44,9 @@ export function App() {
   const [ping, setPing] = useState<Ping | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selectedPeerId, setSelectedPeerId] = useState<string>("");
+  const [surveyProgress, setSurveyProgress] = useState<CatalogSurveyProgress | null>(
+    null,
+  );
   const [plan, setPlan] = useState<SyncPlanView | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [confirmBusy, setConfirmBusy] = useState(false);
@@ -72,10 +75,62 @@ export function App() {
     };
   }, []);
 
+  useEffect(() => {
+    void ipc<{ peerId: string }>("peers.getSelected")
+      .then((result) => {
+        if (!result.peerId) return;
+        setSelectedPeerId(result.peerId);
+        void ipc("catalog.ensureSurvey", { peerId: result.peerId });
+      })
+      .catch(() => undefined);
+  }, []);
+
+  const requestSurvey = useCallback((peerId: string) => {
+    if (!peerId) return;
+    void ipc<CatalogSurveyProgress>("catalog.ensureSurvey", { peerId }).catch(
+      () => undefined,
+    );
+  }, []);
+
+  useEffect(() => {
+    if (!selectedPeerId) {
+      setSurveyProgress(null);
+      return;
+    }
+
+    let active = true;
+    const poll = async () => {
+      try {
+        const progress = await ipc<CatalogSurveyProgress>("catalog.surveyStatus", {
+          peerId: selectedPeerId,
+        });
+        if (active) setSurveyProgress(progress);
+      } catch {
+        // ignore transient errors while polling
+      }
+    };
+
+    void poll();
+    const id = window.setInterval(() => void poll(), 600);
+    return () => {
+      active = false;
+      window.clearInterval(id);
+    };
+  }, [selectedPeerId]);
+
   const conflictCount = useMemo(
     () => plan?.actions.filter((action) => action.kind === "conflict").length ?? 0,
     [plan],
   );
+
+  const catalogBadge = useMemo(() => {
+    if (!surveyProgress || surveyProgress.peerId !== selectedPeerId) return "";
+    if (surveyProgress.status === "running") return " …";
+    if (surveyProgress.status === "done") {
+      return ` (${surveyProgress.identifiedCount})`;
+    }
+    return "";
+  }, [surveyProgress, selectedPeerId]);
 
   async function confirmPlan() {
     if (!plan) return;
@@ -92,6 +147,12 @@ export function App() {
     } finally {
       setConfirmBusy(false);
     }
+  }
+
+  async function handleSelectPeer(peerId: string) {
+    setSelectedPeerId(peerId);
+    await ipc("peers.select", { peerId });
+    requestSurvey(peerId);
   }
 
   return (
@@ -125,6 +186,7 @@ export function App() {
                 {entry.id === "conflicts" && conflictCount > 0
                   ? ` (${conflictCount})`
                   : ""}
+                {entry.id === "catalog" ? catalogBadge : ""}
               </span>
             </button>
           ))}
@@ -142,11 +204,15 @@ export function App() {
         {tab === "devices" ? (
           <DevicesPage
             selectedPeerId={selectedPeerId}
-            onSelectPeer={setSelectedPeerId}
+            onSelectPeer={(peerId) => void handleSelectPeer(peerId)}
           />
         ) : null}
         {tab === "catalog" ? (
-          <CatalogPage selectedPeerId={selectedPeerId} />
+          <CatalogPage
+            selectedPeerId={selectedPeerId}
+            surveyProgress={surveyProgress}
+            onRequestSurvey={requestSurvey}
+          />
         ) : null}
         {tab === "plan" ? (
           <PlanPage
