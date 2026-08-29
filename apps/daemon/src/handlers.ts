@@ -3,6 +3,7 @@ import type { ConflictChoice } from "@envsync/protocol";
 import { PRODUCT_NAME } from "@envsync/protocol";
 import type { CatalogService } from "./catalog-service.js";
 import type { DeviceIdentity } from "./identity.js";
+import { DAEMON_BUILD, DAEMON_VERSION } from "./version.js";
 import type { DaemonStore } from "./store.js";
 import type { SyncSessionService } from "./sync-session.js";
 
@@ -19,7 +20,8 @@ export function createHandlers(
       case "daemon.ping":
         return {
           ok: true,
-          version: "0.1.0",
+          version: DAEMON_VERSION,
+          build: DAEMON_BUILD,
           product: PRODUCT_NAME,
           fingerprint: identity.fingerprint,
           deviceName: store.getDeviceName(),

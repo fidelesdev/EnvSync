@@ -247,6 +247,16 @@ code {
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
 }
 
+.sidebar-version {
+  margin-top: auto;
+  padding: 0.65rem 0.55rem 0.35rem;
+  display: grid;
+  gap: 0.2rem;
+  font-size: 0.68rem;
+  color: var(--muted);
+  border-top: 1px solid var(--line);
+}
+
 .content {
   padding: 1.6rem 1.7rem 2rem;
   animation: fade-in 220ms ease;

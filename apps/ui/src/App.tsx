@@ -7,11 +7,14 @@ import { ConflictsPage } from "./pages/ConflictsPage";
 import { DevicesPage } from "./pages/DevicesPage";
 import { PlanPage } from "./pages/PlanPage";
 import type { CatalogSurveyProgress, ConflictDetail } from "@envsync/protocol";
+import { formatBuildLabel, UI_BUILD, UI_VERSION } from "./build-info";
 
 type Tab = "devices" | "catalog" | "plan" | "conflicts" | "activity";
 
 type Ping = {
   ok: boolean;
+  version?: string;
+  build?: string;
   fingerprint: string;
   deviceName: string;
 };
@@ -229,6 +232,21 @@ export function App() {
             </button>
           ))}
         </div>
+
+        <footer className="sidebar-version" aria-label="Versões">
+          <span className="mono">{formatBuildLabel("UI", UI_VERSION, UI_BUILD)}</span>
+          {ping?.version ? (
+            <span className="mono">
+              {formatBuildLabel(
+                "daemon",
+                ping.version,
+                ping.build ?? "?",
+              )}
+            </span>
+          ) : (
+            <span className="mono muted">daemon —</span>
+          )}
+        </footer>
       </aside>
 
       <main className="content" key={tab}>
