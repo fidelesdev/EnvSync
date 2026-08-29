@@ -92,9 +92,7 @@ export function App() {
   useEffect(() => {
     void ipc<{ peerId: string }>("peers.getSelected")
       .then((result) => {
-        if (!result.peerId) return;
-        setSelectedPeerId(result.peerId);
-        void ipc("catalog.ensureSurvey", { peerId: result.peerId });
+        if (result.peerId) setSelectedPeerId(result.peerId);
       })
       .catch(() => undefined);
   }, []);
@@ -126,9 +124,9 @@ export function App() {
     };
   }, []);
 
-  const requestSurvey = useCallback((peerId: string) => {
+  const startSurvey = useCallback((peerId: string) => {
     if (!peerId) return;
-    void ipc<CatalogSurveyProgress>("catalog.ensureSurvey", { peerId }).catch(
+    void ipc<CatalogSurveyProgress>("catalog.startSurvey", { peerId }).catch(
       () => undefined,
     );
   }, []);
@@ -145,7 +143,12 @@ export function App() {
         const progress = await ipc<CatalogSurveyProgress>("catalog.surveyStatus", {
           peerId: selectedPeerId,
         });
-        if (active) setSurveyProgress(progress);
+        if (!active) return;
+        if (progress.status === "idle") {
+          setSurveyProgress(null);
+          return;
+        }
+        setSurveyProgress(progress);
       } catch {
         // ignore transient errors while polling
       }
@@ -192,8 +195,8 @@ export function App() {
 
   async function handleSelectPeer(peerId: string) {
     setSelectedPeerId(peerId);
+    setSurveyProgress(null);
     await ipc("peers.select", { peerId });
-    requestSurvey(peerId);
   }
 
   return (
@@ -268,7 +271,7 @@ export function App() {
           <CatalogPage
             selectedPeerId={selectedPeerId}
             surveyProgress={surveyProgress}
-            onRequestSurvey={requestSurvey}
+            onStartSurvey={startSurvey}
           />
         ) : null}
         {tab === "plan" ? (

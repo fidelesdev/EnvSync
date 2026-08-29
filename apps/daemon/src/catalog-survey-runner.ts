@@ -96,13 +96,6 @@ export class CatalogSurveyRunner {
   }
 
   ensureSurvey(peerId: string): CatalogSurveyProgress {
-    const current = this.getProgress(peerId);
-    if (current.status === "running") return current;
-    if (current.status === "done" && current.survey) {
-      const age = Date.now() - new Date(current.updatedAt).getTime();
-      if (age < 60_000) return current;
-    }
-    void this.startSurvey(peerId);
     return this.getProgress(peerId);
   }
 

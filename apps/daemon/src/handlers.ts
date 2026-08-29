@@ -81,7 +81,6 @@ export function createHandlers(
       case "peers.select": {
         const peerId = String(body.peerId ?? "");
         store.setSelectedPeerId(peerId);
-        if (peerId) catalog.ensureSurvey(peerId);
         return { peerId };
       }
       case "peers.pair": {
@@ -95,7 +94,6 @@ export function createHandlers(
           .find((entry) => entry.fingerprint === fingerprint);
         if (peer) {
           store.setSelectedPeerId(peer.id);
-          catalog.startSurvey(peer.id);
         }
         return { ok: true, peerId: peer?.id ?? "" };
       }

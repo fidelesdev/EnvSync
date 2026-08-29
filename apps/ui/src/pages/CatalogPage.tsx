@@ -7,13 +7,13 @@ import type { CatalogSurveyProgress } from "@envsync/protocol";
 type Props = {
   selectedPeerId: string;
   surveyProgress: CatalogSurveyProgress | null;
-  onRequestSurvey: (peerId: string) => void;
+  onStartSurvey: (peerId: string) => void;
 };
 
 export function CatalogPage({
   selectedPeerId,
   surveyProgress,
-  onRequestSurvey,
+  onStartSurvey,
 }: Props) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [status, setStatus] = useState("");
@@ -32,15 +32,13 @@ export function CatalogPage({
     void loadSelection().catch(() => undefined);
   }, [loadSelection]);
 
-  useEffect(() => {
-    if (selectedPeerId) onRequestSurvey(selectedPeerId);
-  }, [selectedPeerId, onRequestSurvey]);
-
   const progress =
     surveyProgress?.peerId === selectedPeerId ? surveyProgress : null;
   const survey = progress?.survey ?? null;
   const isRunning = progress?.status === "running";
   const hasError = progress?.status === "error";
+  const hasSurvey = progress?.status === "done" && Boolean(survey);
+  const showProgress = isRunning || hasError || hasSurvey;
 
   const groupLabels = useMemo(() => {
     const map = new Map<string, string>();
@@ -90,7 +88,7 @@ export function CatalogPage({
       });
       setCustomLabel("");
       setCustomPath("");
-      onRequestSurvey(selectedPeerId);
+      setStatus("Pasta adicionada. Busque o catálogo novamente para incluí-la.");
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -103,7 +101,7 @@ export function CatalogPage({
     setError("");
     try {
       await ipc("catalog.removeItem", { itemId });
-      onRequestSurvey(selectedPeerId);
+      setStatus("Item removido. Busque o catálogo novamente se necessário.");
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -131,58 +129,68 @@ export function CatalogPage({
 
   return (
     <div className="stack">
-      <header className="page-head">
-        <h2>Catálogo</h2>
-        {survey ? (
-          <p className="muted">
-            Comparando <strong>{survey.deviceName}</strong> com{" "}
-            <strong>{survey.peerDeviceName}</strong>
-          </p>
-        ) : null}
+      <header className="page-head catalog-head">
+        <div>
+          <h2>Catálogo</h2>
+          {survey ? (
+            <p className="muted">
+              Comparando <strong>{survey.deviceName}</strong> com{" "}
+              <strong>{survey.peerDeviceName}</strong>
+            </p>
+          ) : null}
+        </div>
+        <button
+          type="button"
+          className="primary"
+          disabled={isRunning}
+          onClick={() => onStartSurvey(selectedPeerId)}
+        >
+          {isRunning ? "Buscando…" : hasSurvey ? "Buscar novamente" : "Buscar catálogo"}
+        </button>
       </header>
 
-      <div
-        className="panel catalog-progress"
-        data-running={isRunning}
-        data-error={hasError}
-      >
-        <div className="catalog-progress-head">
-          <div>
-            <strong>{hasError ? "Falha na identificação" : progress?.phase ?? "Aguardando"}</strong>
-            {hasError && progress?.error ? (
-              <p className="error catalog-progress-error">{progress.error}</p>
-            ) : null}
+      {!showProgress ? (
+        <div className="panel muted">
+          Nenhuma busca feita. Clique em <strong>Buscar catálogo</strong> para comparar
+          os dois dispositivos.
+        </div>
+      ) : (
+        <div
+          className="panel catalog-progress"
+          data-running={isRunning}
+          data-error={hasError}
+        >
+          <div className="catalog-progress-head">
+            <div>
+              <strong>
+                {hasError ? "Falha na identificação" : progress?.phase ?? "Aguardando"}
+              </strong>
+              {hasError && progress?.error ? (
+                <p className="error catalog-progress-error">{progress.error}</p>
+              ) : null}
+            </div>
+            <button
+              type="button"
+              className="catalog-identified-btn"
+              onClick={() => setIdentifiedOpen(true)}
+              disabled={!progress || progress.identifiedCount === 0}
+            >
+              {progress?.identifiedCount ?? 0} identificados
+            </button>
           </div>
-          <button
-            type="button"
-            className="catalog-identified-btn"
-            onClick={() => setIdentifiedOpen(true)}
-            disabled={!progress || progress.identifiedCount === 0}
-          >
-            {progress?.identifiedCount ?? 0} identificados
-          </button>
+          <div className="catalog-progress-track" aria-hidden>
+            <div
+              className="catalog-progress-fill"
+              style={{ width: `${progressPercent}%` }}
+            />
+          </div>
+          {hasError ? (
+            <p className="muted mono catalog-log-hint">
+              Log detalhado: ~/.local/share/envsync/catalog-survey.log
+            </p>
+          ) : null}
         </div>
-        <div className="catalog-progress-track" aria-hidden>
-          <div
-            className="catalog-progress-fill"
-            style={{ width: `${progressPercent}%` }}
-          />
-        </div>
-        {hasError ? (
-          <button
-            type="button"
-            className="primary"
-            onClick={() => onRequestSurvey(selectedPeerId)}
-          >
-            Tentar novamente
-          </button>
-        ) : null}
-        {hasError ? (
-          <p className="muted mono catalog-log-hint">
-            Log detalhado: ~/.local/share/envsync/catalog-survey.log
-          </p>
-        ) : null}
-      </div>
+      )}
 
       <div className="panel stack catalog-custom">
         <strong>Adicionar pasta</strong>
@@ -220,64 +228,66 @@ export function CatalogPage({
         <div className="panel muted">Identificando itens…</div>
       ) : null}
 
-      {sections.map((section) => {
-        if (section.items.length === 0) return null;
-        return (
-          <section className="catalog-section" key={section.id}>
-            <h3 className="catalog-section-title">{section.title}</h3>
-            <div className="panel">
-              {section.items.map((item) => (
-                <label className="item catalog-item" key={item.id}>
-                  <input
-                    type="checkbox"
-                    checked={selected.has(item.id)}
-                    onChange={(event) =>
-                      toggleItem(item.id, event.target.checked)
-                    }
-                  />
-                  <div>
-                    <strong>{item.label}</strong>
-                    <div className="muted">
-                      {groupLabels.get(item.groupId) ?? item.groupId}
-                      {item.inSync ? " · igual" : ""}
-                      {item.detail ? ` · ${item.detail}` : ""}
-                    </div>
-                  </div>
-                  <div className="row catalog-item-actions">
-                    <span
-                      className="badge"
-                      data-tone={item.source === "custom" ? "accent" : undefined}
-                    >
-                      {item.source}
-                    </span>
-                    {item.source === "custom" ? (
-                      <button
-                        type="button"
-                        onClick={(event) => {
-                          event.preventDefault();
-                          void removeItem(item.id);
-                        }}
-                      >
-                        Remover
-                      </button>
-                    ) : item.source === "discovered" ? (
-                      <button
-                        type="button"
-                        onClick={(event) => {
-                          event.preventDefault();
-                          void removeItem(item.id);
-                        }}
-                      >
-                        Ocultar
-                      </button>
-                    ) : null}
-                  </div>
-                </label>
-              ))}
-            </div>
-          </section>
-        );
-      })}
+      {hasSurvey
+        ? sections.map((section) => {
+            if (section.items.length === 0) return null;
+            return (
+              <section className="catalog-section" key={section.id}>
+                <h3 className="catalog-section-title">{section.title}</h3>
+                <div className="panel">
+                  {section.items.map((item) => (
+                    <label className="item catalog-item" key={item.id}>
+                      <input
+                        type="checkbox"
+                        checked={selected.has(item.id)}
+                        onChange={(event) =>
+                          toggleItem(item.id, event.target.checked)
+                        }
+                      />
+                      <div>
+                        <strong>{item.label}</strong>
+                        <div className="muted">
+                          {groupLabels.get(item.groupId) ?? item.groupId}
+                          {item.inSync ? " · igual" : ""}
+                          {item.detail ? ` · ${item.detail}` : ""}
+                        </div>
+                      </div>
+                      <div className="row catalog-item-actions">
+                        <span
+                          className="badge"
+                          data-tone={item.source === "custom" ? "accent" : undefined}
+                        >
+                          {item.source}
+                        </span>
+                        {item.source === "custom" ? (
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.preventDefault();
+                              void removeItem(item.id);
+                            }}
+                          >
+                            Remover
+                          </button>
+                        ) : item.source === "discovered" ? (
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.preventDefault();
+                              void removeItem(item.id);
+                            }}
+                          >
+                            Ocultar
+                          </button>
+                        ) : null}
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              </section>
+            );
+          })
+        : null}
 
       {status ? <p className="muted">{status}</p> : null}
       {error ? <p className="error">{error}</p> : null}

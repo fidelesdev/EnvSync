@@ -79,8 +79,6 @@ export class CatalogService {
     }
     const item = customPathItem(label, normalized);
     this.store.addCustomItem(item);
-    const peerId = this.store.getSelectedPeerId();
-    if (peerId) this.runner.restartSurvey(peerId);
     return this.getEffectiveCatalog();
   }
 
@@ -92,9 +90,11 @@ export class CatalogService {
     }
     const selected = this.store.getSelected().filter((id) => id !== itemId);
     this.store.setSelected(selected);
-    const peerId = this.store.getSelectedPeerId();
-    if (peerId) this.runner.restartSurvey(peerId);
     return this.getEffectiveCatalog();
+  }
+
+  getSurveyProgress(peerId: string): CatalogSurveyProgress {
+    return this.runner.getProgress(peerId);
   }
 
   ensureSurvey(peerId: string): CatalogSurveyProgress {
@@ -105,10 +105,6 @@ export class CatalogService {
     return this.runner.startSurvey(peerId);
   }
 
-  getSurveyProgress(peerId: string): CatalogSurveyProgress {
-    return this.runner.getProgress(peerId);
-  }
-
   async survey(peerId: string): Promise<CatalogSurvey> {
     const progress = this.runner.getProgress(peerId);
     if (progress.status === "done" && progress.survey) {
@@ -117,21 +113,6 @@ export class CatalogService {
     if (progress.status === "running") {
       throw new Error("Catálogo ainda está sendo identificado");
     }
-    this.runner.startSurvey(peerId);
-    throw new Error("Catálogo ainda está sendo identificado");
-  }
-
-  bootstrapSurveys(): void {
-    const selected = this.store.getSelectedPeerId();
-    if (selected) this.runner.ensureSurvey(selected);
-
-    for (const trusted of this.store.listTrusted()) {
-      const peer = this.store
-        .listDiscovered()
-        .find((entry) => entry.fingerprint === trusted.fingerprint);
-      if (peer?.online && peer.trusted) {
-        this.runner.ensureSurvey(peer.id);
-      }
-    }
+    throw new Error("Nenhuma busca concluída — inicie manualmente em Catálogo");
   }
 }
