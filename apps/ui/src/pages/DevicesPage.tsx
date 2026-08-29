@@ -1,4 +1,3 @@
-import { useCallback, useEffect, useState } from "react";
 import { ipc } from "../ipc/client";
 
 type Peer = {
@@ -12,27 +11,12 @@ type Peer = {
 };
 
 type Props = {
+  peers: Peer[];
   selectedPeerId: string;
   onSelectPeer: (id: string) => void;
 };
 
-export function DevicesPage({ selectedPeerId, onSelectPeer }: Props) {
-  const [peers, setPeers] = useState<Peer[]>([]);
-  const [message, setMessage] = useState<string>("");
-
-  const refresh = useCallback(async () => {
-    const result = await ipc<{ peers: Peer[] }>("peers.list");
-    setPeers(result.peers);
-  }, []);
-
-  useEffect(() => {
-    void refresh().catch((error: unknown) => {
-      setMessage(error instanceof Error ? error.message : String(error));
-    });
-    const id = window.setInterval(() => void refresh(), 3000);
-    return () => window.clearInterval(id);
-  }, [refresh]);
-
+export function DevicesPage({ peers, selectedPeerId, onSelectPeer }: Props) {
   return (
     <div className="stack">
       <header className="page-head">
@@ -40,7 +24,9 @@ export function DevicesPage({ selectedPeerId, onSelectPeer }: Props) {
       </header>
       <div className="device-grid">
         {peers.length === 0 ? (
-          <p className="muted panel">Nenhum dispositivo na rede.</p>
+          <p className="muted panel">
+            Nenhum EnvSync encontrado na rede. Abra o app no outro dispositivo.
+          </p>
         ) : (
           peers.map((peer) => {
             const selected = selectedPeerId === peer.id;
@@ -61,11 +47,8 @@ export function DevicesPage({ selectedPeerId, onSelectPeer }: Props) {
                   {peer.host}:{peer.port}
                 </div>
                 <div className="row">
-                  <span
-                    className="badge"
-                    data-tone={peer.online ? "ok" : undefined}
-                  >
-                    {peer.online ? "online" : "offline"}
+                  <span className="badge" data-tone="ok">
+                    EnvSync ativo
                   </span>
                   <span
                     className="badge"
@@ -85,7 +68,7 @@ export function DevicesPage({ selectedPeerId, onSelectPeer }: Props) {
                       onClick={() =>
                         void ipc("peers.unpair", {
                           fingerprint: peer.fingerprint,
-                        }).then(refresh)
+                        })
                       }
                     >
                       Desparear
@@ -98,7 +81,7 @@ export function DevicesPage({ selectedPeerId, onSelectPeer }: Props) {
                         void ipc("peers.pair", {
                           fingerprint: peer.fingerprint,
                           name: peer.name,
-                        }).then(refresh)
+                        })
                       }
                     >
                       Parear
@@ -110,7 +93,6 @@ export function DevicesPage({ selectedPeerId, onSelectPeer }: Props) {
           })
         )}
       </div>
-      {message ? <p className="error">{message}</p> : null}
     </div>
   );
 }

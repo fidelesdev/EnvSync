@@ -191,12 +191,17 @@ export class DaemonStore {
 
   removeDiscovered(id: string): void {
     this.discovered.delete(id);
+    if (this.getSelectedPeerId() === id) {
+      this.setSelectedPeerId("");
+    }
   }
 
   listDiscovered(): PeerInfo[] {
-    return [...this.discovered.values()].map((peer) => ({
-      ...peer,
-      trusted: this.isTrusted(peer.fingerprint),
-    }));
+    return [...this.discovered.values()]
+      .filter((peer) => peer.online)
+      .map((peer) => ({
+        ...peer,
+        trusted: this.isTrusted(peer.fingerprint),
+      }));
   }
 }

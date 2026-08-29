@@ -16,6 +16,16 @@ type Ping = {
   deviceName: string;
 };
 
+type Peer = {
+  id: string;
+  name: string;
+  host: string;
+  port: number;
+  online: boolean;
+  trusted: boolean;
+  fingerprint: string;
+};
+
 export type SyncPlanView = {
   id: string;
   peerId: string;
@@ -44,6 +54,7 @@ export function App() {
   const [ping, setPing] = useState<Ping | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selectedPeerId, setSelectedPeerId] = useState<string>("");
+  const [peers, setPeers] = useState<Peer[]>([]);
   const [surveyProgress, setSurveyProgress] = useState<CatalogSurveyProgress | null>(
     null,
   );
@@ -83,6 +94,33 @@ export function App() {
         void ipc("catalog.ensureSurvey", { peerId: result.peerId });
       })
       .catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+
+    const pollPeers = async () => {
+      try {
+        const result = await ipc<{ peers: Peer[] }>("peers.list");
+        if (!active) return;
+        setPeers(result.peers);
+        setSelectedPeerId((current) => {
+          if (current && !result.peers.some((peer) => peer.id === current)) {
+            return "";
+          }
+          return current;
+        });
+      } catch {
+        // ignore transient errors while polling
+      }
+    };
+
+    void pollPeers();
+    const id = window.setInterval(() => void pollPeers(), 2_000);
+    return () => {
+      active = false;
+      window.clearInterval(id);
+    };
   }, []);
 
   const requestSurvey = useCallback((peerId: string) => {
@@ -203,6 +241,7 @@ export function App() {
         ) : null}
         {tab === "devices" ? (
           <DevicesPage
+            peers={peers}
             selectedPeerId={selectedPeerId}
             onSelectPeer={(peerId) => void handleSelectPeer(peerId)}
           />
