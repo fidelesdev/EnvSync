@@ -16,7 +16,7 @@ async function main(): Promise<void> {
   const store = new DaemonStore(root);
   const identity = loadOrCreateIdentity(join(root, "certs"));
   const transport = new TlsPeerTransport(identity);
-  const catalog = new CatalogService(store, transport);
+  const catalog = new CatalogService(store, transport, identity.fingerprint);
   const sync = new SyncSessionService(store, transport, catalog);
   const handlers = createHandlers(store, identity, sync, catalog);
 

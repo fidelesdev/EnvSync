@@ -177,6 +177,11 @@ export function CatalogPage({
             Tentar novamente
           </button>
         ) : null}
+        {hasError ? (
+          <p className="muted mono catalog-log-hint">
+            Log detalhado: ~/.local/share/envsync/catalog-survey.log
+          </p>
+        ) : null}
       </div>
 
       <div className="panel stack catalog-custom">

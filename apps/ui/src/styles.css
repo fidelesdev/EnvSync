@@ -637,6 +637,11 @@ code {
   }
 }
 
+.catalog-log-hint {
+  margin: 0;
+  font-size: 0.78rem;
+}
+
 @keyframes pulse-orb {
   0%,
   100% {

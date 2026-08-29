@@ -21,8 +21,10 @@ import { envPlugin, filesPlugin, fingerprintPath, getPlugin } from "@envsync/plu
 import type { CatalogSnapshot, PeerInfo } from "@envsync/protocol";
 import type { CatalogService } from "./catalog-service.js";
 import type { DeviceIdentity } from "./identity.js";
+import { peerCertFingerprint } from "./identity.js";
 import { buildLocalInventory, readManagedEnvValues } from "./inventory.js";
-import type { PeerTransport, PathInspectResult } from "./peer-client.js";
+import { catalogLog } from "./catalog-log.js";
+import type { PeerTransport, PathInspectResult, CatalogRequester } from "./peer-client.js";
 import { PEER_PORT } from "./discovery.js";
 import type { DaemonStore } from "./store.js";
 
@@ -45,12 +47,10 @@ type PathPayload = {
   entryName?: string;
 };
 
+const PEER_RPC_TIMEOUT_MS = 45_000;
+
 function peerFingerprint(socket: TLSSocket): string {
-  const cert = socket.getPeerCertificate();
-  if (cert && typeof cert.fingerprint256 === "string") {
-    return cert.fingerprint256.replace(/:/g, "").toLowerCase();
-  }
-  return "";
+  return peerCertFingerprint(socket);
 }
 
 function packPath(absPath: string): PathPayload {
@@ -146,11 +146,34 @@ export class TlsPeerServer {
 
   private async handleSocket(socket: TLSSocket): Promise<void> {
     const peerFp = peerFingerprint(socket);
-    if (!peerFp || !this.store.isTrusted(peerFp)) {
-      socket.write(JSON.stringify({ id: "0", error: "untrusted peer" }) + "\n");
-      socket.destroy();
+    if (!peerFp) {
+      catalogLog("error", "peer TLS sem certificado legível (getPeerCertificate)", {
+        hint: "TLS 1.3 exige getPeerCertificate(true)",
+      });
+      socket.write(
+        JSON.stringify({ id: "0", error: "certificado peer ausente" }) + "\n",
+      );
+      socket.end();
       return;
     }
+
+    if (!this.store.isTrusted(peerFp)) {
+      const trusted = this.store.listTrusted().map((entry) => entry.fingerprint.slice(0, 16));
+      catalogLog("error", "peer TLS rejeitado — não pareado nesta máquina", {
+        peerFingerprint: peerFp.slice(0, 16),
+        trustedFingerprints: trusted,
+        hint: "Pareie também neste dispositivo (confiança mútua)",
+      });
+      this.store.addActivity(
+        "catalog",
+        `Conexão recusada: peer ${peerFp.slice(0, 12)}… não confiável`,
+      );
+      socket.write(JSON.stringify({ id: "0", error: "untrusted peer" }) + "\n");
+      socket.end();
+      return;
+    }
+
+    catalogLog("info", "peer TLS conectado", { fingerprint: peerFp.slice(0, 16) });
 
     let buffer = "";
     socket.on("data", (chunk) => {
@@ -166,14 +189,23 @@ export class TlsPeerServer {
   }
 
   private async dispatch(socket: TLSSocket, line: string): Promise<void> {
+    let requestId = "?";
     try {
       const req = JSON.parse(line) as PeerRequest;
+      requestId = req.id;
+      catalogLog("info", "peer RPC recebido", { method: req.method, id: req.id });
+      const started = Date.now();
       const result = await this.handleMethod(req.method, req.params ?? {});
+      catalogLog("info", "peer RPC concluído", {
+        method: req.method,
+        ms: Date.now() - started,
+      });
       const response: PeerResponse = { id: req.id, result };
       socket.write(JSON.stringify(response) + "\n");
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      socket.write(JSON.stringify({ id: "?", error: message }) + "\n");
+      catalogLog("error", "peer RPC falhou", { id: requestId, error: message });
+      socket.write(JSON.stringify({ id: requestId, error: message }) + "\n");
     }
   }
 
@@ -187,7 +219,11 @@ export class TlsPeerServer {
       return buildLocalInventory(effective, itemIds);
     }
     if (method === "catalog.snapshot") {
-      return this.catalog.getSnapshot();
+      const requester: CatalogRequester = {
+        deviceName: String(params.requesterName ?? "dispositivo remoto"),
+        fingerprint: String(params.requesterFingerprint ?? ""),
+      };
+      return this.catalog.getSnapshot(requester);
     }
     if (method === "package.install") {
       const manager = params.manager as PackageManager;
@@ -267,7 +303,22 @@ export class TlsPeerTransport implements PeerTransport {
     method: string,
     params: Record<string, unknown>,
   ): Promise<unknown> {
+    const started = Date.now();
+    catalogLog("info", "peer RPC enviando", {
+      method,
+      host: peer.host,
+      port: peer.port,
+    });
+
     const socket = await new Promise<TLSSocket>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        reject(
+          new Error(
+            `Timeout ao conectar em ${peer.host}:${peer.port} (${method})`,
+          ),
+        );
+      }, PEER_RPC_TIMEOUT_MS);
+
       const sock = tlsConnect(
         {
           host: peer.host,
@@ -276,33 +327,76 @@ export class TlsPeerTransport implements PeerTransport {
           cert: this.identity.certPem,
           rejectUnauthorized: false,
         },
-        () => resolve(sock),
+        () => {
+          clearTimeout(timer);
+          resolve(sock);
+        },
       );
-      sock.on("error", reject);
+      sock.on("error", (error) => {
+        clearTimeout(timer);
+        reject(error);
+      });
     });
 
     const id = crypto.randomUUID();
-    socket.write(JSON.stringify({ id, method, params }) + "\n");
+    const payload = JSON.stringify({ id, method, params }) + "\n";
 
     const response = await new Promise<PeerResponse>((resolve, reject) => {
       let buffer = "";
+      const timer = setTimeout(() => {
+        socket.destroy();
+        reject(
+          new Error(
+            `Timeout aguardando resposta de ${peer.host} (${method}, ${PEER_RPC_TIMEOUT_MS}ms)`,
+          ),
+        );
+      }, PEER_RPC_TIMEOUT_MS);
+
+      const finish = (handler: () => void) => {
+        clearTimeout(timer);
+        handler();
+      };
+
       socket.on("data", (chunk) => {
         buffer += chunk.toString("utf8");
         const idx = buffer.indexOf("\n");
         if (idx >= 0) {
           try {
-            resolve(JSON.parse(buffer.slice(0, idx)) as PeerResponse);
+            const parsed = JSON.parse(buffer.slice(0, idx)) as PeerResponse;
+            finish(() => {
+              socket.end();
+              resolve(parsed);
+            });
           } catch (error) {
-            reject(error);
-          } finally {
-            socket.end();
+            finish(() => {
+              socket.destroy();
+              reject(error);
+            });
           }
         }
       });
-      socket.on("error", reject);
+
+      socket.on("error", (error) => {
+        finish(() => reject(error));
+      });
+
+      socket.write(payload);
     });
 
-    if (response.error) throw new Error(response.error);
+    catalogLog("info", "peer RPC resposta", {
+      method,
+      ms: Date.now() - started,
+      error: response.error,
+    });
+
+    if (response.error) {
+      if (response.error === "untrusted peer") {
+        throw new Error(
+          `${peer.name} não confia nesta máquina — abra EnvSync lá e pareie este PC`,
+        );
+      }
+      throw new Error(response.error);
+    }
     return response.result;
   }
 
@@ -368,8 +462,14 @@ export class TlsPeerTransport implements PeerTransport {
     })) as PathInspectResult;
   }
 
-  fetchCatalogSnapshot(peer: PeerInfo): Promise<CatalogSnapshot> {
-    return this.request(peer, "catalog.snapshot", {}) as Promise<CatalogSnapshot>;
+  fetchCatalogSnapshot(
+    peer: PeerInfo,
+    requester: CatalogRequester,
+  ): Promise<CatalogSnapshot> {
+    return this.request(peer, "catalog.snapshot", {
+      requesterName: requester.deviceName,
+      requesterFingerprint: requester.fingerprint,
+    }) as Promise<CatalogSnapshot>;
   }
 
   async pushEnv(

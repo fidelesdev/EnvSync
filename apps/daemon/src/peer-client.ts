@@ -10,6 +10,11 @@ export type PathInspectResult = {
   preview?: string;
 };
 
+export type CatalogRequester = {
+  deviceName: string;
+  fingerprint: string;
+};
+
 export type PeerTransport = {
   fetchInventory(peer: PeerInfo, itemIds: string[]): Promise<ItemInventory[]>;
   remoteInstall(
@@ -21,7 +26,10 @@ export type PeerTransport = {
   /** Retorna caminho local temporário, ou null se o remoto não tiver o path. */
   pullPath(peer: PeerInfo, remoteLogical: string): Promise<string | null>;
   inspectPath(peer: PeerInfo, remoteLogical: string): Promise<PathInspectResult>;
-  fetchCatalogSnapshot(peer: PeerInfo): Promise<import("@envsync/protocol").CatalogSnapshot>;
+  fetchCatalogSnapshot(
+    peer: PeerInfo,
+    requester: CatalogRequester,
+  ): Promise<CatalogSnapshot>;
   pushEnv(
     peer: PeerInfo,
     keys: string[],
@@ -63,7 +71,10 @@ export class LoopbackPeerTransport implements PeerTransport {
     };
   }
 
-  async fetchCatalogSnapshot(): Promise<CatalogSnapshot> {
+  async fetchCatalogSnapshot(
+    _peer: PeerInfo,
+    _requester: CatalogRequester,
+  ): Promise<CatalogSnapshot> {
     return { deviceName: "loopback", items: [] };
   }
 

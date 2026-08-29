@@ -10,8 +10,10 @@ import { existsSync } from "node:fs";
 import { expandHome } from "@envsync/core";
 import { CatalogSurveyRunner } from "./catalog-survey-runner.js";
 import { pickFolderDialog } from "./folder-picker.js";
-import type { PeerTransport } from "./peer-client.js";
+import type { CatalogRequester, PeerTransport } from "./peer-client.js";
 import type { DaemonStore } from "./store.js";
+import { catalogLog } from "./catalog-log.js";
+import { notifyDesktop } from "./notify.js";
 
 export class CatalogService {
   readonly runner: CatalogSurveyRunner;
@@ -19,8 +21,9 @@ export class CatalogService {
   constructor(
     private readonly store: DaemonStore,
     peerTransport: PeerTransport,
+    localFingerprint: string,
   ) {
-    this.runner = new CatalogSurveyRunner(store, peerTransport);
+    this.runner = new CatalogSurveyRunner(store, peerTransport, localFingerprint);
   }
 
   getCatalogState(): CatalogState {
@@ -31,8 +34,32 @@ export class CatalogService {
     return buildEffectiveCatalog(this.getCatalogState());
   }
 
-  async getSnapshot(): Promise<{ deviceName: string; items: CatalogItem[] }> {
+  async getSnapshot(requester?: CatalogRequester): Promise<{
+    deviceName: string;
+    items: CatalogItem[];
+  }> {
+    const started = Date.now();
+    if (requester) {
+      catalogLog("info", "catalog.snapshot atendendo pedido remoto", {
+        requester: requester.deviceName,
+        requesterFp: requester.fingerprint.slice(0, 16),
+      });
+      void notifyDesktop(
+        "EnvSync",
+        `${requester.deviceName} está consultando o catálogo desta máquina`,
+      );
+      this.store.addActivity(
+        "catalog",
+        `Catálogo consultado por ${requester.deviceName}`,
+      );
+    }
     const catalog = await this.getEffectiveCatalog();
+    if (requester) {
+      catalogLog("info", "catalog.snapshot pronto", {
+        ms: Date.now() - started,
+        items: catalog.items.length,
+      });
+    }
     return {
       deviceName: this.store.getDeviceName(),
       items: catalog.items,
