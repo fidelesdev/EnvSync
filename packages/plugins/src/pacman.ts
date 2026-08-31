@@ -23,12 +23,23 @@ export const pacmanPlugin: SyncPlugin = {
     const name = args.packageName;
     if (!name) throw new Error("pacman.apply requer packageName");
     if (args.direction === "push") {
-      // Push means ensure peer installs; locally we only verify presence.
       const local = await pacmanQuery(name);
       if (!local) throw new Error(`Pacote local ausente para push: ${name}`);
       return;
     }
-    await execFileAsync("sudo", ["pacman", "-S", "--noconfirm", "--needed", name]);
+    try {
+      await execFileAsync("pacman", ["-S", "--noconfirm", "--needed", name]);
+      return;
+    } catch {
+      // precisa de privilégios elevados
+    }
+    try {
+      await execFileAsync("sudo", ["-n", "pacman", "-S", "--noconfirm", "--needed", name]);
+    } catch {
+      throw new Error(
+        `Instalação de ${name} requer root. Rode no terminal: sudo pacman -S --needed ${name}`,
+      );
+    }
   },
 };
 

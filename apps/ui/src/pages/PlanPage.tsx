@@ -1,18 +1,22 @@
 import { useState } from "react";
 import { ipc } from "../ipc/client";
-import type { SyncPlanView } from "../App";
+import type { ApplyResult, SyncPlanView } from "../App";
 
 type Props = {
   selectedPeerId: string;
   plan: SyncPlanView | null;
+  applyResults: ApplyResult[] | null;
   onPlan: (plan: SyncPlanView | null) => void;
+  onApplyResults: (results: ApplyResult[] | null) => void;
   onOpenConfirm: () => void;
 };
 
 export function PlanPage({
   selectedPeerId,
   plan,
+  applyResults,
   onPlan,
+  onApplyResults,
   onOpenConfirm,
 }: Props) {
   const [busy, setBusy] = useState(false);
@@ -21,6 +25,7 @@ export function PlanPage({
   async function build() {
     setBusy(true);
     setError("");
+    onApplyResults(null);
     try {
       if (!selectedPeerId) throw new Error("Selecione um dispositivo");
       const selection = await ipc<{ itemIds: string[] }>("selection.get");
@@ -40,6 +45,8 @@ export function PlanPage({
   }
 
   const canConfirm = Boolean(plan && !plan.confirmed);
+  const okCount = applyResults?.filter((result) => result.ok).length ?? 0;
+  const failCount = applyResults?.filter((result) => !result.ok).length ?? 0;
 
   return (
     <div className="stack">
@@ -59,6 +66,32 @@ export function PlanPage({
           Revisar e aplicar…
         </button>
       </div>
+
+      {applyResults && applyResults.length > 0 ? (
+        <div className="panel stack apply-results" data-has-error={failCount > 0}>
+          <strong>
+            Aplicação concluída — {okCount} ok
+            {failCount > 0 ? `, ${failCount} falha(s)` : ""}
+          </strong>
+          <ul className="apply-results-list">
+            {applyResults.map((result) => (
+              <li key={result.itemId} data-ok={result.ok}>
+                <span className="badge" data-tone={result.ok ? "ok" : "danger"}>
+                  {result.ok ? "ok" : "erro"}
+                </span>
+                <div>
+                  <strong>{result.itemId}</strong>
+                  <div className="muted">{result.message}</div>
+                </div>
+              </li>
+            ))}
+          </ul>
+          <p className="muted">
+            Detalhes também em <strong>Atividade</strong>.
+          </p>
+        </div>
+      ) : null}
+
       {plan ? (
         <div className="panel stack">
           <p className="muted">

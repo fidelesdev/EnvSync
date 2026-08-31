@@ -12,4 +12,10 @@ if [[ ! -f apps/ui/dist/index.html ]]; then
   pnpm --filter @envsync/ui build
 fi
 
+if [[ ! -f apps/daemon/dist/main.js ]]; then
+  pnpm --filter @envsync/daemon build
+fi
+
+"${ROOT}/scripts/ensure-daemon.sh"
+
 exec python3 "$ROOT/apps/desktop/envsync-desktop-qt.py"

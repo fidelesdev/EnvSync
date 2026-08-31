@@ -90,7 +90,7 @@ StartupNotify=true
 StartupWMClass=envsync
 EOF
 
-chmod +x "${ROOT}/scripts/launch-envsync.sh" "${ROOT}/apps/desktop/envsync-desktop-qt.py" "${ROOT}/scripts/install.sh"
+chmod +x "${ROOT}/scripts/launch-envsync.sh" "${ROOT}/scripts/ensure-daemon.sh" "${ROOT}/apps/desktop/envsync-desktop-qt.py" "${ROOT}/scripts/install.sh"
 update-desktop-database "${HOME}/.local/share/applications" 2>/dev/null || true
 kbuildsycoca6 --noincremental 2>/dev/null || kbuildsycoca5 --noincremental 2>/dev/null || true
 

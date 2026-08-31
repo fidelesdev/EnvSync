@@ -12,7 +12,7 @@ import {
   filesPlugin,
   getPlugin,
 } from "@envsync/plugins";
-import type { ConflictChoice, SyncPlan } from "@envsync/protocol";
+import type { ConflictChoice, SyncPlan, ApplyResult } from "@envsync/protocol";
 import { buildConflictDetails } from "./conflict-details.js";
 import type { CatalogService } from "./catalog-service.js";
 import { buildLocalInventory, readManagedEnvValues } from "./inventory.js";
@@ -51,7 +51,7 @@ export class SyncSessionService {
     return plan;
   }
 
-  async confirm(planId: string): Promise<SyncPlan> {
+  async confirm(planId: string): Promise<{ plan: SyncPlan; results: ApplyResult[] }> {
     const plan = this.store.getPlan(planId);
     if (!plan) throw new Error("Plano não encontrado");
     const confirmed = markPlanConfirmed(plan);
@@ -64,23 +64,48 @@ export class SyncSessionService {
     const peer = this.store.listDiscovered().find((entry) => entry.id === plan.peerId);
     if (!peer) throw new Error("Peer offline");
 
+    const results: ApplyResult[] = [];
+
     for (const action of confirmed.actions) {
       if (action.kind === "conflict" || action.kind === "skip") continue;
       if (action.kind !== "install" && action.kind !== "copy") continue;
       const direction = action.direction;
       if (direction !== "push" && direction !== "pull") continue;
       const item = catalog.items.find((entry) => entry.id === action.itemId);
-      if (!item) continue;
+      if (!item) {
+        results.push({
+          itemId: action.itemId,
+          ok: false,
+          message: "Item não encontrado no catálogo",
+        });
+        continue;
+      }
       try {
         await this.applyItem(item, direction, sessionBackup, peer.id, true);
-        this.store.addActivity("apply", `OK ${item.id} (${direction})`);
+        action.summary =
+          direction === "pull"
+            ? `Instalado/aplicado localmente: ${item.label}`
+            : `Enviado/aplicado no peer: ${item.label}`;
+        action.kind = "skip";
+        results.push({
+          itemId: action.itemId,
+          ok: true,
+          message: action.summary,
+        });
+        this.store.addActivity("apply", `OK ${item.label} (${direction})`);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        this.store.addActivity("error", `Falha ${item.id}: ${message}`);
+        results.push({
+          itemId: action.itemId,
+          ok: false,
+          message,
+        });
+        this.store.addActivity("error", `Falha ${item.label}: ${message}`);
       }
     }
 
-    return confirmed;
+    this.store.updatePlan(confirmed);
+    return { plan: confirmed, results };
   }
 
   async resolveConflict(

@@ -659,6 +659,35 @@ code {
   }
 }
 
+.apply-results-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 0.55rem;
+}
+
+.apply-results-list li {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.65rem;
+  align-items: start;
+  padding: 0.55rem 0.65rem;
+  border-radius: 0.65rem;
+  border: 1px solid var(--line);
+  background: var(--paper);
+}
+
+.apply-results[data-has-error="true"] {
+  border-color: color-mix(in srgb, var(--danger) 25%, var(--line));
+}
+
+.badge[data-tone="danger"] {
+  background: var(--danger-soft);
+  border-color: color-mix(in srgb, var(--danger) 25%, var(--line));
+  color: var(--danger);
+}
+
 .catalog-log-hint {
   margin: 0;
   font-size: 0.78rem;

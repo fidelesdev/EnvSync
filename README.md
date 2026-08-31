@@ -42,8 +42,12 @@ ENVSYNC_INSTALL_SERVICE=1 ./scripts/install.sh
 
 ### 3. Abrir
 
-- Menu iniciar → **EnvSync**
+- Menu iniciar → **EnvSync** (inicia daemon + janela automaticamente)
 - Ou: `~/projects/envsync/scripts/launch-envsync.sh`
+
+**Importante:** abra sempre pelo atalho do menu ou `launch-envsync.sh`. Abrir só o navegador em `http://127.0.0.1:45770` **não** inicia o daemon.
+
+No notebook, se ainda pedir daemon manualmente: atualize o repo (`git pull`), rode `./scripts/install.sh` de novo e abra pelo menu. Log de arranque: `/tmp/envsync-daemon.log`.
 
 ## Uso entre dois dispositivos
 

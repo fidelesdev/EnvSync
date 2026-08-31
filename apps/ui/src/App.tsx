@@ -6,7 +6,7 @@ import { CatalogPage } from "./pages/CatalogPage";
 import { ConflictsPage } from "./pages/ConflictsPage";
 import { DevicesPage } from "./pages/DevicesPage";
 import { PlanPage } from "./pages/PlanPage";
-import type { CatalogSurveyProgress, ConflictDetail } from "@envsync/protocol";
+import type { CatalogSurveyProgress, ConflictDetail, ApplyResult } from "@envsync/protocol";
 import { formatBuildLabel, UI_BUILD, UI_VERSION } from "./build-info";
 
 type Tab = "devices" | "catalog" | "plan" | "conflicts" | "activity";
@@ -28,6 +28,8 @@ type Peer = {
   trusted: boolean;
   fingerprint: string;
 };
+
+export type ApplyResultView = ApplyResult;
 
 export type SyncPlanView = {
   id: string;
@@ -64,6 +66,7 @@ export function App() {
   const [plan, setPlan] = useState<SyncPlanView | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [confirmBusy, setConfirmBusy] = useState(false);
+  const [applyResults, setApplyResults] = useState<ApplyResult[] | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -179,11 +182,17 @@ export function App() {
   async function confirmPlan() {
     if (!plan) return;
     setConfirmBusy(true);
+    setApplyResults(null);
     try {
-      const next = await ipc<SyncPlanView>("sync.confirm", { planId: plan.id });
-      setPlan(next);
+      const response = await ipc<{ plan: SyncPlanView; results: ApplyResult[] }>(
+        "sync.confirm",
+        { planId: plan.id },
+      );
+      setPlan(response.plan);
+      setApplyResults(response.results);
       setConfirmOpen(false);
-      if (next.actions.some((action) => action.kind === "conflict")) {
+      setTab("plan");
+      if (response.plan.actions.some((action) => action.kind === "conflict")) {
         setTab("conflicts");
       }
     } catch (err) {
@@ -278,7 +287,9 @@ export function App() {
           <PlanPage
             selectedPeerId={selectedPeerId}
             plan={plan}
+            applyResults={applyResults}
             onPlan={setPlan}
+            onApplyResults={setApplyResults}
             onOpenConfirm={() => setConfirmOpen(true)}
           />
         ) : null}

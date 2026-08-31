@@ -13,9 +13,25 @@ function actionLabel(action: SyncPlanView["actions"][number]): string {
   if (action.kind === "conflict") return "Conflito";
   if (action.kind === "skip") return "Ignorar";
   if (action.kind === "install") {
-    return action.direction === "pull" ? "Instalar aqui" : "Instalar no peer";
+    if (action.itemId.startsWith("auto:pacman:") || action.itemId.startsWith("auto:flatpak:")) {
+      return action.direction === "pull"
+        ? "Instalar aqui (pacman/flatpak local)"
+        : "Instalar no peer via rede";
+    }
+    return action.direction === "pull" ? "Copiar para cá" : "Enviar para peer";
   }
   return "Copiar";
+}
+
+function actionNote(action: SyncPlanView["actions"][number]): string | null {
+  if (action.kind !== "install") return null;
+  if (action.itemId.startsWith("auto:pacman:") && action.direction === "pull") {
+    return "Pacotes não são copiados entre PCs — instala dos repositórios desta máquina.";
+  }
+  if (action.direction === "pull" && action.itemId.startsWith("custom:")) {
+    return "Arquivos serão transferidos do outro dispositivo via TLS.";
+  }
+  return null;
 }
 
 export function ConfirmPlanModal({
@@ -35,23 +51,23 @@ export function ConfirmPlanModal({
   return (
     <Modal open={open} title="Confirmar sincronização" onClose={onClose}>
       <div className="stack">
-        <p className="muted">
-          Revise o que será aplicado nesta máquina e no dispositivo selecionado.
-        </p>
-
         {executable.length > 0 ? (
           <section className="modal-section">
             <h4>Ações imediatas</h4>
             <ul className="modal-list">
-              {executable.map((action) => (
-                <li key={`${action.itemId}-${action.kind}`}>
-                  <strong>{action.itemId}</strong>
-                  <span className="badge" data-tone="accent">
-                    {actionLabel(action)}
-                  </span>
-                  <span className="muted">{action.summary}</span>
-                </li>
-              ))}
+              {executable.map((action) => {
+                const note = actionNote(action);
+                return (
+                  <li key={`${action.itemId}-${action.kind}`}>
+                    <strong>{action.itemId}</strong>
+                    <span className="badge" data-tone="accent">
+                      {actionLabel(action)}
+                    </span>
+                    <span className="muted">{action.summary}</span>
+                    {note ? <span className="muted">{note}</span> : null}
+                  </li>
+                );
+              })}
             </ul>
           </section>
         ) : (
@@ -87,7 +103,7 @@ export function ConfirmPlanModal({
             Cancelar
           </button>
           <button type="button" className="primary" onClick={onConfirm} disabled={busy}>
-            Confirmar e aplicar
+            {busy ? "Aplicando…" : "Confirmar e aplicar"}
           </button>
         </div>
       </div>

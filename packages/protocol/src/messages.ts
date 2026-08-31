@@ -78,6 +78,17 @@ export type ActivityEntry = {
   message: string;
 };
 
+export type ApplyResult = {
+  itemId: string;
+  ok: boolean;
+  message: string;
+};
+
+export type ConfirmPlanResult = {
+  plan: SyncPlan;
+  results: ApplyResult[];
+};
+
 export type CatalogSurveySectionId = "remoteOnly" | "both" | "localOnly";
 
 export type CatalogSurveyItem = {

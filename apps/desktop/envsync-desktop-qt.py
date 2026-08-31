@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -98,14 +99,37 @@ def start_backend() -> None:
 
     ensure_path()
     log = Path("/tmp/envsync-daemon.log")
-    with log.open("ab") as handle:
-        subprocess.Popen(
-            ["pnpm", "daemon"],
-            cwd=str(ROOT),
-            stdout=handle,
-            stderr=handle,
-            start_new_session=True,
+    unit = Path.home() / ".config/systemd/user/envsyncd.service"
+    if unit.exists():
+        subprocess.run(
+            ["systemctl", "--user", "start", "envsyncd.service"],
+            check=False,
+            capture_output=True,
         )
+        for _ in range(40):
+            if health_ok():
+                return
+            time.sleep(0.25)
+
+    node = shutil.which("node")
+    daemon_js = ROOT / "apps/daemon/dist/main.js"
+    with log.open("ab") as handle:
+        if node and daemon_js.exists():
+            subprocess.Popen(
+                [node, str(daemon_js)],
+                cwd=str(ROOT),
+                stdout=handle,
+                stderr=handle,
+                start_new_session=True,
+            )
+        else:
+            subprocess.Popen(
+                ["pnpm", "daemon"],
+                cwd=str(ROOT),
+                stdout=handle,
+                stderr=handle,
+                start_new_session=True,
+            )
 
     for _ in range(40):
         if health_ok():
