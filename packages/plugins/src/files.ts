@@ -42,8 +42,11 @@ function walkFiles(root: string, excludes: string[] = []): string[] {
         return rel === pattern || entry.name === pattern;
       });
       if (excluded) continue;
-      if (entry.isDirectory()) stack.push(full);
-      else results.push(full);
+      if (entry.isDirectory()) {
+        stack.push(full);
+      } else if (entry.isFile()) {
+        results.push(full);
+      }
     }
   }
   return results.sort();

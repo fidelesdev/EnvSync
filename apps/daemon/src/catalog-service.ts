@@ -10,7 +10,7 @@ import type {
   CatalogSurveyProgress,
   RemoteDirListing,
 } from "@envsync/protocol";
-import { existsSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { expandHome } from "@envsync/core";
 import { CatalogSurveyRunner } from "./catalog-survey-runner.js";
 import { pickFolderDialog } from "./folder-picker.js";
@@ -111,17 +111,20 @@ export class CatalogService {
 
     if (peerId) {
       const peer = this.resolvePeer(peerId);
-      const inspect = await this.peerTransport.inspectPath(peer, normalized);
-      if (inspect.missing) {
+      const stat = await this.peerTransport.statRemotePath(peer, normalized);
+      if (stat.missing) {
         throw new Error(`Pasta não encontrada em ${peer.name}: ${normalized}`);
       }
-      if (inspect.isDirectory === false) {
+      if (!stat.isDirectory) {
         throw new Error(`Caminho não é uma pasta em ${peer.name}: ${normalized}`);
       }
     } else {
       const abs = expandHome(normalized);
       if (!existsSync(abs)) {
         throw new Error(`Pasta não encontrada: ${normalized}`);
+      }
+      if (!statSync(abs).isDirectory()) {
+        throw new Error(`Caminho não é uma pasta: ${normalized}`);
       }
     }
 

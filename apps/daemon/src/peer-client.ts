@@ -14,6 +14,11 @@ export type PathInspectResult = {
   preview?: string;
 };
 
+export type PathStatResult = {
+  missing: boolean;
+  isDirectory: boolean;
+};
+
 export type CatalogRequester = {
   deviceName: string;
   fingerprint: string;
@@ -30,6 +35,7 @@ export type PeerTransport = {
   /** Retorna caminho local temporário, ou null se o remoto não tiver o path. */
   pullPath(peer: PeerInfo, remoteLogical: string): Promise<string | null>;
   inspectPath(peer: PeerInfo, remoteLogical: string): Promise<PathInspectResult>;
+  statRemotePath(peer: PeerInfo, remoteLogical: string): Promise<PathStatResult>;
   fetchCatalogSnapshot(
     peer: PeerInfo,
     requester: CatalogRequester,
@@ -68,13 +74,29 @@ export class LoopbackPeerTransport implements PeerTransport {
   }
 
   async inspectPath(_peer: PeerInfo, remoteLogical: string): Promise<PathInspectResult> {
-    const expanded = remoteLogical.replace(/^~/, process.env.HOME ?? "");
+    const { existsSync, statSync } = await import("node:fs");
+    const { expandHome } = await import("@envsync/core");
+    const abs = expandHome(remoteLogical);
+    if (!existsSync(abs)) {
+      return { missing: true, fingerprint: "" };
+    }
+    const info = statSync(abs);
     return {
       missing: false,
       fingerprint: "loopback",
-      preview: undefined,
-      size: 0,
+      isDirectory: info.isDirectory(),
+      size: info.size,
     };
+  }
+
+  async statRemotePath(_peer: PeerInfo, remoteLogical: string): Promise<PathStatResult> {
+    const { existsSync, statSync } = await import("node:fs");
+    const { expandHome } = await import("@envsync/core");
+    const abs = expandHome(remoteLogical);
+    if (!existsSync(abs)) {
+      return { missing: true, isDirectory: false };
+    }
+    return { missing: false, isDirectory: statSync(abs).isDirectory() };
   }
 
   async fetchCatalogSnapshot(

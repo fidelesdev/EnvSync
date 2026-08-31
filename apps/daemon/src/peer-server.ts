@@ -26,7 +26,7 @@ import { peerCertFingerprint } from "./identity.js";
 import { buildLocalInventory, readManagedEnvValues } from "./inventory.js";
 import { catalogLog } from "./catalog-log.js";
 import { pickFolderDialog } from "./folder-picker.js";
-import type { PeerTransport, PathInspectResult, CatalogRequester } from "./peer-client.js";
+import type { PeerTransport, PathInspectResult, PathStatResult, CatalogRequester } from "./peer-client.js";
 import { PEER_PORT } from "./discovery.js";
 import type { DaemonStore } from "./store.js";
 
@@ -50,6 +50,18 @@ type PathPayload = {
 };
 
 const PEER_RPC_TIMEOUT_MS = 45_000;
+
+function statPathWithinHome(logical: string): PathStatResult {
+  const home = homedir();
+  const abs = expandHome(logical, home);
+  if (!abs.startsWith(home)) {
+    throw new Error("Só é permitido validar pastas dentro do home do usuário remoto");
+  }
+  if (!existsSync(abs)) {
+    return { missing: true, isDirectory: false };
+  }
+  return { missing: false, isDirectory: statSync(abs).isDirectory() };
+}
 
 function listDirWithinHome(logical: string): RemoteDirListing {
   const home = homedir();
@@ -291,11 +303,21 @@ export class TlsPeerServer {
         return { missing: true, fingerprint: "" };
       }
       const info = statSync(abs);
-      const fingerprint = fingerprintPath(abs);
+      const isDirectory = info.isDirectory();
+      let fingerprint = "";
+      if (isDirectory) {
+        try {
+          fingerprint = fingerprintPath(abs);
+        } catch {
+          fingerprint = "";
+        }
+      } else if (info.isFile()) {
+        fingerprint = fingerprintPath(abs);
+      }
       const base = {
         missing: false,
         fingerprint,
-        isDirectory: info.isDirectory(),
+        isDirectory,
         size: info.size,
       };
       if (!info.isFile() || info.size > 48_000) return base;
@@ -305,6 +327,9 @@ export class TlsPeerServer {
       } catch {
         return base;
       }
+    }
+    if (method === "fs.stat") {
+      return statPathWithinHome(String(params.logical ?? ""));
     }
     if (method === "fs.listDir") {
       return listDirWithinHome(String(params.logical ?? "~"));
@@ -496,6 +521,10 @@ export class TlsPeerTransport implements PeerTransport {
     return (await this.request(peer, "path.inspect", {
       logical: remoteLogical,
     })) as PathInspectResult;
+  }
+
+  statRemotePath(peer: PeerInfo, remoteLogical: string): Promise<PathStatResult> {
+    return this.request(peer, "fs.stat", { logical: remoteLogical }) as Promise<PathStatResult>;
   }
 
   fetchCatalogSnapshot(
