@@ -1,17 +1,19 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ipc } from "../ipc/client";
-import { pickFolder } from "../lib/pick-folder";
 import { IdentifiedItemsModal } from "../components/IdentifiedItemsModal";
+import { RemoteFolderModal } from "../components/RemoteFolderModal";
 import type { CatalogSurveyProgress } from "@envsync/protocol";
 
 type Props = {
   selectedPeerId: string;
+  selectedPeerName: string;
   surveyProgress: CatalogSurveyProgress | null;
   onStartSurvey: (peerId: string) => void;
 };
 
 export function CatalogPage({
   selectedPeerId,
+  selectedPeerName,
   surveyProgress,
   onStartSurvey,
 }: Props) {
@@ -22,6 +24,7 @@ export function CatalogPage({
   const [customPath, setCustomPath] = useState("");
   const [busy, setBusy] = useState(false);
   const [identifiedOpen, setIdentifiedOpen] = useState(false);
+  const [folderModalOpen, setFolderModalOpen] = useState(false);
 
   const loadSelection = useCallback(async () => {
     const selection = await ipc<{ itemIds: string[] }>("selection.get");
@@ -63,18 +66,11 @@ export function CatalogPage({
     void persist(next);
   }
 
-  async function browseFolder() {
-    setError("");
-    try {
-      const path = await pickFolder();
-      if (!path) return;
-      setCustomPath(path);
-      if (!customLabel.trim()) {
-        const name = path.split("/").filter(Boolean).pop() ?? path;
-        setCustomLabel(name);
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+  function applySelectedPath(path: string) {
+    setCustomPath(path);
+    if (!customLabel.trim()) {
+      const name = path.split("/").filter(Boolean).pop() ?? path;
+      setCustomLabel(name);
     }
   }
 
@@ -85,6 +81,7 @@ export function CatalogPage({
       await ipc("catalog.addCustomPath", {
         label: customLabel,
         path: customPath,
+        peerId: selectedPeerId,
       });
       setCustomLabel("");
       setCustomPath("");
@@ -194,6 +191,10 @@ export function CatalogPage({
 
       <div className="panel stack catalog-custom">
         <strong>Adicionar pasta</strong>
+        <p className="muted">
+          Caminho no dispositivo <strong>{selectedPeerName}</strong> (ex.{" "}
+          <code>~/projects/foo</code>). Use o navegador remoto ou digite manualmente.
+        </p>
         <div className="row">
           <input
             type="text"
@@ -204,14 +205,18 @@ export function CatalogPage({
           />
           <input
             type="text"
-            placeholder="Nenhuma pasta selecionada"
+            placeholder="~/caminho/no/outro-dispositivo"
             value={customPath}
-            readOnly
-            aria-label="Caminho da pasta"
+            onChange={(event) => setCustomPath(event.target.value)}
+            aria-label="Caminho da pasta no dispositivo selecionado"
             className="grow"
           />
-          <button type="button" onClick={() => void browseFolder()} disabled={busy}>
-            Escolher pasta…
+          <button
+            type="button"
+            onClick={() => setFolderModalOpen(true)}
+            disabled={busy}
+          >
+            Navegar no peer…
           </button>
           <button
             type="button"
@@ -296,6 +301,14 @@ export function CatalogPage({
         open={identifiedOpen}
         items={progress?.identified ?? []}
         onClose={() => setIdentifiedOpen(false)}
+      />
+
+      <RemoteFolderModal
+        open={folderModalOpen}
+        peerId={selectedPeerId}
+        peerName={selectedPeerName}
+        onClose={() => setFolderModalOpen(false)}
+        onSelect={applySelectedPath}
       />
     </div>
   );

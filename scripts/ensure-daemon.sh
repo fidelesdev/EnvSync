@@ -4,6 +4,8 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 URL="${ENVSYNC_URL:-http://127.0.0.1:45770}"
+export DISPLAY="${DISPLAY:-:0}"
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
 export PATH="${HOME}/.local/share/pnpm:${HOME}/.nvm/versions/node/v24.18.0/bin:/usr/local/bin:/usr/bin:${PATH}"
 
 health_ok() {

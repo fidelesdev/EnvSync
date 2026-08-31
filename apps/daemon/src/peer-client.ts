@@ -1,4 +1,8 @@
-import type { CatalogSnapshot, PeerInfo } from "@envsync/protocol";
+import type {
+  CatalogSnapshot,
+  PeerInfo,
+  RemoteDirListing,
+} from "@envsync/protocol";
 import type { ItemInventory } from "@envsync/core";
 import type { PackageManager } from "@envsync/catalog";
 
@@ -30,6 +34,8 @@ export type PeerTransport = {
     peer: PeerInfo,
     requester: CatalogRequester,
   ): Promise<CatalogSnapshot>;
+  listRemoteDir(peer: PeerInfo, logical: string): Promise<RemoteDirListing>;
+  pickRemoteFolder(peer: PeerInfo): Promise<string | null>;
   pushEnv(
     peer: PeerInfo,
     keys: string[],
@@ -76,6 +82,36 @@ export class LoopbackPeerTransport implements PeerTransport {
     _requester: CatalogRequester,
   ): Promise<CatalogSnapshot> {
     return { deviceName: "loopback", items: [] };
+  }
+
+  async listRemoteDir(_peer: PeerInfo, logical: string): Promise<RemoteDirListing> {
+    const { readdirSync, statSync, existsSync } = await import("node:fs");
+    const { homedir } = await import("node:os");
+    const { dirname, join } = await import("node:path");
+    const { expandHome, toLogicalPath } = await import("@envsync/core");
+    const home = homedir();
+    const abs = expandHome(logical, home);
+    if (!existsSync(abs) || !statSync(abs).isDirectory()) {
+      throw new Error(`Pasta não encontrada: ${logical}`);
+    }
+    const entries = readdirSync(abs, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory() && !entry.name.startsWith("."))
+      .map((entry) => ({
+        name: entry.name,
+        path: toLogicalPath(join(abs, entry.name), home),
+      }))
+      .sort((left, right) => left.name.localeCompare(right.name));
+    const parent =
+      abs === home ? null : toLogicalPath(dirname(abs), home);
+    return {
+      path: toLogicalPath(abs, home),
+      parent,
+      entries,
+    };
+  }
+
+  async pickRemoteFolder(): Promise<string | null> {
+    return null;
   }
 
   async pushEnv(): Promise<void> {}

@@ -54,13 +54,23 @@ export function createHandlers(
         if (!peerId) throw new Error("peerId obrigatório");
         return catalog.ensureSurvey(peerId);
       }
-      case "catalog.pickFolder":
+      case "catalog.pickFolder": {
+        const peerId = String(body.peerId ?? "");
+        if (peerId) return catalog.pickRemoteFolder(peerId);
         return catalog.pickFolder();
+      }
+      case "catalog.listRemoteDir": {
+        const peerId = String(body.peerId ?? "");
+        const path = String(body.path ?? "~");
+        if (!peerId) throw new Error("peerId obrigatório");
+        return catalog.listRemoteDir(peerId, path);
+      }
       case "catalog.addCustomPath": {
         const label = String(body.label ?? "");
         const path = String(body.path ?? "");
+        const peerId = String(body.peerId ?? "");
         if (!path.trim()) throw new Error("Informe o caminho da pasta");
-        return catalog.addCustomPath(label, path);
+        return catalog.addCustomPath(label, path, peerId || undefined);
       }
       case "catalog.removeItem": {
         const itemId = String(body.itemId ?? "");

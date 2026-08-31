@@ -279,6 +279,9 @@ export function App() {
         {tab === "catalog" ? (
           <CatalogPage
             selectedPeerId={selectedPeerId}
+            selectedPeerName={
+              peers.find((peer) => peer.id === selectedPeerId)?.name ?? "peer"
+            }
             surveyProgress={surveyProgress}
             onStartSurvey={startSurvey}
           />

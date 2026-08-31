@@ -25,3 +25,11 @@ export function expandHome(path: string, home = homedir()): string {
   if (path === "~") return home;
   return path;
 }
+
+export function toLogicalPath(absPath: string, home = homedir()): string {
+  if (absPath === home) return "~";
+  if (absPath.startsWith(`${home}/`)) {
+    return `~${absPath.slice(home.length)}`;
+  }
+  return absPath;
+}

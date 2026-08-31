@@ -13,8 +13,12 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-from PySide6.QtCore import QSettings, QTimer, QUrl, QUrlQuery
+from PySide6.QtCore import QObject, QSettings, QTimer, QUrl, QUrlQuery, Slot
 from PySide6.QtGui import QAction, QGuiApplication, QIcon
+from PySide6.QtWebChannel import QWebChannel
+from PySide6.QtWebEngineCore import QWebEnginePage, QWebEngineScript, QWebEngineUrlScheme
+from PySide6.QtWebEngineWidgets import QWebEngineView
+
 from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
@@ -24,11 +28,32 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from PySide6.QtWebEngineCore import QWebEnginePage, QWebEngineUrlScheme
-from PySide6.QtWebEngineWidgets import QWebEngineView
 
 ROOT = Path(__file__).resolve().parents[2]
 URL = os.environ.get("ENVSYNC_URL", "http://127.0.0.1:45770")
+WEBCHANNEL_BOOTSTRAP = """
+(function () {
+  if (window.__envsyncChannelBootstrapped) return;
+  window.__envsyncChannelBootstrapped = true;
+
+  function attachChannel() {
+    if (typeof QWebChannel === "undefined" || typeof qt === "undefined") return;
+    new QWebChannel(qt.webChannelTransport, function (channel) {
+      window.envsyncDesktop = channel.objects.envsync;
+      window.__ENVSYNC_DESKTOP__ = true;
+    });
+  }
+
+  var script = document.createElement("script");
+  script.src = "qrc:///qtwebchannel/qwebchannel.js";
+  script.onload = attachChannel;
+  script.onerror = function () {
+    window.__ENVSYNC_DESKTOP__ = true;
+  };
+  document.head.appendChild(script);
+})();
+"""
+_CHANNEL_SCRIPT_INSTALLED = False
 ICON_CANDIDATES = [
     Path.home() / ".local/share/icons/envsync.png",
     Path.home() / ".local/share/icons/hicolor/128x128/apps/envsync.png",
@@ -113,6 +138,8 @@ def start_backend() -> None:
 
     node = shutil.which("node")
     daemon_js = ROOT / "apps/daemon/dist/main.js"
+    daemon_env = os.environ.copy()
+    daemon_env.setdefault("DISPLAY", ":0")
     with log.open("ab") as handle:
         if node and daemon_js.exists():
             subprocess.Popen(
@@ -121,6 +148,7 @@ def start_backend() -> None:
                 stdout=handle,
                 stderr=handle,
                 start_new_session=True,
+                env=daemon_env,
             )
         else:
             subprocess.Popen(
@@ -129,6 +157,7 @@ def start_backend() -> None:
                 stdout=handle,
                 stderr=handle,
                 start_new_session=True,
+                env=daemon_env,
             )
 
     for _ in range(40):
@@ -163,13 +192,53 @@ def stop_backend() -> None:
 
 def register_envsync_scheme() -> None:
     scheme = QWebEngineUrlScheme(b"envsync")
+    scheme.setFlags(
+        QWebEngineUrlScheme.Flag.SecureScheme
+        | QWebEngineUrlScheme.Flag.LocalScheme
+        | QWebEngineUrlScheme.Flag.LocalAccessAllowed
+        | QWebEngineUrlScheme.Flag.CorsEnabled
+    )
     QWebEngineUrlScheme.registerScheme(scheme)
 
 
+def install_webchannel_script(profile) -> None:
+    global _CHANNEL_SCRIPT_INSTALLED
+    if _CHANNEL_SCRIPT_INSTALLED:
+        return
+    script = QWebEngineScript()
+    script.setName("envsync-webchannel")
+    script.setSourceCode(WEBCHANNEL_BOOTSTRAP)
+    script.setInjectionPoint(QWebEngineScript.InjectionPoint.DocumentReady)
+    script.setWorldId(QWebEngineScript.ScriptWorldId.MainWorld)
+    script.setRunsOnSubFrames(False)
+    profile.scripts().insert(script)
+    _CHANNEL_SCRIPT_INSTALLED = True
+
+
+class DesktopBridge(QObject):
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._parent = parent
+
+    @Slot(result=str)
+    def pickFolder(self) -> str:
+        parent = self._parent if isinstance(self._parent, QWidget) else None
+        path = QFileDialog.getExistingDirectory(
+            parent,
+            "Selecionar pasta",
+            str(Path.home()),
+            QFileDialog.Option.ShowDirsOnly,
+        )
+        return path or ""
+
+
 class EnvSyncWebPage(QWebEnginePage):
-    def __init__(self, profile, view: QWebEngineView) -> None:
+    def __init__(self, profile, view: QWebEngineView, bridge: DesktopBridge) -> None:
         super().__init__(profile, view)
         self._view = view
+        channel = QWebChannel(self)
+        channel.registerObject("envsync", bridge)
+        self.setWebChannel(channel)
 
     def acceptNavigationRequest(self, url: QUrl, _type, isMainFrame) -> bool:  # noqa: N802
         if url.scheme() == "envsync" and url.host() == "pick-folder":
@@ -179,6 +248,7 @@ class EnvSyncWebPage(QWebEnginePage):
                 self._view,
                 "Selecionar pasta",
                 str(Path.home()),
+                QFileDialog.Option.ShowDirsOnly,
             )
             payload = json.dumps({"id": req_id, "path": path or ""})
             self.runJavaScript(f"window.__envsyncFolderReply?.({payload})")
@@ -194,10 +264,11 @@ class EnvSyncWindow(QMainWindow):
         self.setWindowTitle("EnvSync")
         self.setWindowIcon(icon)
 
+        self.bridge = DesktopBridge(self)
         self.browser = QWebEngineView(self)
-        self.browser.setPage(
-            EnvSyncWebPage(self.browser.page().profile(), self.browser)
-        )
+        profile = self.browser.page().profile()
+        install_webchannel_script(profile)
+        self.browser.setPage(EnvSyncWebPage(profile, self.browser, self.bridge))
         self.browser.loadFinished.connect(self._on_load_finished)
         self.browser.setUrl(QUrl(url))
 
@@ -221,7 +292,10 @@ class EnvSyncWindow(QMainWindow):
             self.restoreState(state)
 
     def _on_load_finished(self, _ok: bool) -> None:
-        self.browser.page().runJavaScript("window.__ENVSYNC_DESKTOP__ = true;")
+        self.browser.page().runJavaScript(
+            "window.__ENVSYNC_DESKTOP__ = true;"
+            "if (window.envsyncDesktop) window.__ENVSYNC_DESKTOP__ = true;"
+        )
 
     def closeEvent(self, event) -> None:  # noqa: N802
         self.settings.setValue("geometry", self.saveGeometry())

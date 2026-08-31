@@ -9,21 +9,23 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   rmSync,
   statSync,
   writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import type { PackageManager } from "@envsync/catalog";
-import { backupDir, expandHome, type ItemInventory } from "@envsync/core";
+import { backupDir, expandHome, toLogicalPath, type ItemInventory } from "@envsync/core";
 import { envPlugin, filesPlugin, fingerprintPath, getPlugin } from "@envsync/plugins";
-import type { CatalogSnapshot, PeerInfo } from "@envsync/protocol";
+import type { CatalogSnapshot, PeerInfo, RemoteDirListing } from "@envsync/protocol";
 import type { CatalogService } from "./catalog-service.js";
 import type { DeviceIdentity } from "./identity.js";
 import { peerCertFingerprint } from "./identity.js";
 import { buildLocalInventory, readManagedEnvValues } from "./inventory.js";
 import { catalogLog } from "./catalog-log.js";
+import { pickFolderDialog } from "./folder-picker.js";
 import type { PeerTransport, PathInspectResult, CatalogRequester } from "./peer-client.js";
 import { PEER_PORT } from "./discovery.js";
 import type { DaemonStore } from "./store.js";
@@ -48,6 +50,33 @@ type PathPayload = {
 };
 
 const PEER_RPC_TIMEOUT_MS = 45_000;
+
+function listDirWithinHome(logical: string): RemoteDirListing {
+  const home = homedir();
+  const abs = expandHome(logical, home);
+  if (!abs.startsWith(home)) {
+    throw new Error("Só é permitido listar pastas dentro do home do usuário remoto");
+  }
+  if (!existsSync(abs) || !statSync(abs).isDirectory()) {
+    throw new Error(`Pasta não encontrada: ${logical}`);
+  }
+
+  const entries = readdirSync(abs, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && !entry.name.startsWith("."))
+    .map((entry) => ({
+      name: entry.name,
+      path: toLogicalPath(join(abs, entry.name), home),
+    }))
+    .sort((left, right) => left.name.localeCompare(right.name));
+
+  const parent = abs === home ? null : toLogicalPath(dirname(abs), home);
+
+  return {
+    path: toLogicalPath(abs, home),
+    parent,
+    entries,
+  };
+}
 
 function peerFingerprint(socket: TLSSocket): string {
   return peerCertFingerprint(socket);
@@ -277,6 +306,13 @@ export class TlsPeerServer {
         return base;
       }
     }
+    if (method === "fs.listDir") {
+      return listDirWithinHome(String(params.logical ?? "~"));
+    }
+    if (method === "catalog.pickFolder") {
+      const path = await pickFolderDialog();
+      return { path };
+    }
     if (method === "path.put") {
       const target = expandHome(params.logical as string);
       unpackPath(
@@ -470,6 +506,17 @@ export class TlsPeerTransport implements PeerTransport {
       requesterName: requester.deviceName,
       requesterFingerprint: requester.fingerprint,
     }) as Promise<CatalogSnapshot>;
+  }
+
+  listRemoteDir(peer: PeerInfo, logical: string): Promise<RemoteDirListing> {
+    return this.request(peer, "fs.listDir", { logical }) as Promise<RemoteDirListing>;
+  }
+
+  async pickRemoteFolder(peer: PeerInfo): Promise<string | null> {
+    const result = (await this.request(peer, "catalog.pickFolder", {})) as {
+      path?: string | null;
+    };
+    return result.path?.trim() || null;
   }
 
   async pushEnv(

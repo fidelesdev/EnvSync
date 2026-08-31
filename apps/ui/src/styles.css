@@ -596,6 +596,48 @@ code {
   font-size: 0.9rem;
 }
 
+.remote-folder-modal {
+  gap: 0.85rem;
+}
+
+.remote-folder-current {
+  display: grid;
+  gap: 0.65rem;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: 0.75rem;
+  background: var(--paper);
+}
+
+.remote-folder-actions {
+  flex-wrap: wrap;
+}
+
+.remote-folder-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 0.35rem;
+  max-height: 18rem;
+  overflow: auto;
+}
+
+.remote-folder-entry {
+  width: 100%;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 0.65rem;
+  align-items: center;
+  text-align: left;
+  padding: 0.55rem 0.7rem;
+  border-radius: 0.65rem;
+}
+
+.remote-folder-entry .mono {
+  font-size: 0.78rem;
+}
+
 .catalog-item-actions {
   justify-content: flex-end;
 }

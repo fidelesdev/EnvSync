@@ -5,7 +5,11 @@ import {
   type CatalogItem,
   type CatalogState,
 } from "@envsync/catalog";
-import type { CatalogSurvey, CatalogSurveyProgress } from "@envsync/protocol";
+import type {
+  CatalogSurvey,
+  CatalogSurveyProgress,
+  RemoteDirListing,
+} from "@envsync/protocol";
 import { existsSync } from "node:fs";
 import { expandHome } from "@envsync/core";
 import { CatalogSurveyRunner } from "./catalog-survey-runner.js";
@@ -20,10 +24,24 @@ export class CatalogService {
 
   constructor(
     private readonly store: DaemonStore,
-    peerTransport: PeerTransport,
+    private readonly peerTransport: PeerTransport,
     localFingerprint: string,
   ) {
     this.runner = new CatalogSurveyRunner(store, peerTransport, localFingerprint);
+  }
+
+  private resolvePeer(peerId: string) {
+    const peer = this.store.listDiscovered().find((entry) => entry.id === peerId);
+    if (!peer) {
+      throw new Error("Dispositivo não encontrado na rede (mDNS)");
+    }
+    if (!peer.trusted) {
+      throw new Error("Dispositivo não pareado — pareie antes de navegar pastas");
+    }
+    if (!peer.online) {
+      throw new Error(`${peer.name} está offline`);
+    }
+    return peer;
   }
 
   getCatalogState(): CatalogState {
@@ -66,17 +84,47 @@ export class CatalogService {
     };
   }
 
+  async listRemoteDir(peerId: string, path: string): Promise<RemoteDirListing> {
+    const peer = this.resolvePeer(peerId);
+    const logical = path.trim() || "~";
+    return this.peerTransport.listRemoteDir(peer, logical);
+  }
+
+  async pickRemoteFolder(peerId: string): Promise<{ path: string | null }> {
+    const peer = this.resolvePeer(peerId);
+    const path = await this.peerTransport.pickRemoteFolder(peer);
+    return { path };
+  }
+
   async pickFolder(): Promise<{ path: string | null }> {
     const path = await pickFolderDialog();
     return { path };
   }
 
-  async addCustomPath(label: string, path: string): Promise<Catalog> {
+  async addCustomPath(
+    label: string,
+    path: string,
+    peerId?: string,
+  ): Promise<Catalog> {
     const normalized = path.trim();
-    const abs = expandHome(normalized);
-    if (!existsSync(abs)) {
-      throw new Error(`Pasta não encontrada: ${normalized}`);
+    if (!normalized) throw new Error("Informe o caminho da pasta");
+
+    if (peerId) {
+      const peer = this.resolvePeer(peerId);
+      const inspect = await this.peerTransport.inspectPath(peer, normalized);
+      if (inspect.missing) {
+        throw new Error(`Pasta não encontrada em ${peer.name}: ${normalized}`);
+      }
+      if (inspect.isDirectory === false) {
+        throw new Error(`Caminho não é uma pasta em ${peer.name}: ${normalized}`);
+      }
+    } else {
+      const abs = expandHome(normalized);
+      if (!existsSync(abs)) {
+        throw new Error(`Pasta não encontrada: ${normalized}`);
+      }
     }
+
     const item = customPathItem(label, normalized);
     this.store.addCustomItem(item);
     return this.getEffectiveCatalog();

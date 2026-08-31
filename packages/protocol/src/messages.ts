@@ -10,6 +10,7 @@ export type IpcMethod =
   | "catalog.startSurvey"
   | "catalog.ensureSurvey"
   | "catalog.pickFolder"
+  | "catalog.listRemoteDir"
   | "catalog.addCustomPath"
   | "catalog.removeItem"
   | "selection.get"
@@ -139,4 +140,15 @@ export type CatalogSnapshot = {
     groupId: string;
     providers: unknown[];
   }>;
+};
+
+export type RemoteDirEntry = {
+  name: string;
+  path: string;
+};
+
+export type RemoteDirListing = {
+  path: string;
+  parent: string | null;
+  entries: RemoteDirEntry[];
 };
